@@ -48,8 +48,8 @@ module Thrift
       i
     end
 
-    def read_all(size)
-      return Bytes.new(size, 0) if size <= 0
+    def read_all(size : Int32)
+      return Bytes.new(0, 0) if size <= 0
       buf = read(size)
       while (buf.size < size)
         chunk = read(size - buf.size)

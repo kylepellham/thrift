@@ -1,9 +1,11 @@
 require "log"
 require "./protocol/base_protocol.cr"
 require "./types.cr"
+require "./exceptions.cr"
 
 module Thrift
   module Processor
+
     @handler : Nil
     def initialize(handler, logger = nil)
       @handler = handler
@@ -14,14 +16,21 @@ module Thrift
       end
     end
 
+    def responds?(method_check)
+      false
+    end
+
     def process(iprot : BaseProtocol, oprot : BaseProtocol)
-      name, type, seqid  = iprot.read_message_begin
-      if self.responds?("process_#{name}")
+      name, type, seqid = iprot.read_message_begin
+      p! name
+      p! responds_to?(:hello)
+      if {{@type.id}}.responds?("#{name}")
         begin
-          send("process_#{name}", seqid, iprot, oprot)
+          pp name, type, seqid
+          spawn send("#{name}", seqid, iprot, oprot)
         rescue ex
           x = ApplicationException.new(ApplicationException::INTERNAL_ERROR, "Internal error")
-          @logger.debug "Internal error : #{e.message}\n#{ex.backtrace.join("\n")}"
+          @logger.try(&.debug {"Internal error : #{ex.message}\n#{ex.backtrace.join("\n")}"})
           write_error(x, oprot, name, seqid)
         end
         true
@@ -54,16 +63,29 @@ module Thrift
       oprot.write_message_end
       oprot.trans.flush
     end
+
     macro included
-      puts "included"
-      def self.responds?(method_check : String)
-        methods = [
-          {% for method in @type.methods %}
-            method.name.stringify
-          {% end %}
-        ] of String
-        return methods.includes? method_check
-      end
+      {% verbatim do %}
+        macro finished
+          
+          def self.responds?(method_name)
+            return {{@type.methods.map &.name.stringify}}.includes? method_name
+          end
+          
+          def send(method : String, seqid : Int32, iprot : Thrift::BaseProtocol, oprot : Thrift::BaseProtocol)
+            case method
+            {% for method in @type.methods %}
+              {% if method.name.stringify[0.."process_".size] == "process_" %}
+            when "{{method.name.id}}"
+              @handler.{{method.name.stringify.l_strip("process_").id}}(seqid, iprot, oprot)
+              {% end %}
+            {% end %}
+            else
+              raise ArgumentError.new "Method #{method} Not found"
+            end
+          end
+        end
+      {% end %}
     end
   end
 end

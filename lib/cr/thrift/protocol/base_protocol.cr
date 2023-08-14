@@ -31,7 +31,7 @@ module Thrift
       false
     end
 
-    def write_message_begin(name, type, seqid)
+    def write_message_begin(name : String, type : Thrift::MessageTypes, seqid : Int32)
       raise NotImplementedError.new ""
     end
 
@@ -43,7 +43,7 @@ module Thrift
 
     def write_struct_end; nil; end
 
-    def write_field_begin(name, type, id)
+    def write_field_begin(name : String, type : MessageTypes, id : Int16)
       raise NotImplementedError.new ""
     end
 
@@ -71,27 +71,27 @@ module Thrift
 
     def write_set_end; nil; end
 
-    def write_bool(bool)
+    def write_bool(bool : Boolean)
       raise NotImplementedError.new ""
     end
 
-    def write_byte(byte)
+    def write_byte(byte : UInt8)
       raise NotImplementedError.new ""
     end
 
-    def write_i16(i16)
+    def write_i16(i16 : Int16)
       raise NotImplementedError.new ""
     end
 
-    def write_i32(i32)
+    def write_i32(i32 : Int32)
       raise NotImplementedError.new ""
     end
 
-    def write_i64(i64)
+    def write_i64(i64 : Int64)
       raise NotImplementedError.new ""
     end
 
-    def write_double(dub)
+    def write_double(dub : Float64)
       raise NotImplementedError.new ""
     end
 
@@ -102,7 +102,7 @@ module Thrift
     # Raises EncodingError if the transcoding to UTF-8 fails.
     #
     # Returns nothing.
-    def write_string(str)
+    def write_string(str : String)
       raise NotImplementedError.new ""
     end
 
@@ -112,11 +112,11 @@ module Thrift
     # buf - The String to write.
     #
     # Returns nothing.
-    def write_binary(buf)
+    def write_binary(buf : Bytes)
       raise NotImplementedError.new ""
     end
 
-    def read_message_begin
+    def read_message_begin : Tuple(String, UInt8, Int32)
       raise NotImplementedError.new ""
     end
 
@@ -134,7 +134,7 @@ module Thrift
 
     def read_field_end; nil; end
 
-    def read_map_begin
+    def read_map_begin : Tuple(UInt8, UInt8, Int32)
       raise NotImplementedError.new ""
     end
 
@@ -146,7 +146,7 @@ module Thrift
 
     def read_list_end; nil; end
 
-    def read_set_begin
+    def read_set_begin : Tuple(Uint8, Int32)
       raise NotImplementedError.new ""
     end
 
@@ -156,30 +156,30 @@ module Thrift
       raise NotImplementedError.new ""
     end
 
-    def read_byte
+    def read_byte : Bool
       raise NotImplementedError.new ""
     end
 
-    def read_i16
+    def read_i16 : Int16
       raise NotImplementedError.new ""
     end
 
-    def read_i32
+    def read_i32 : Int32
       raise NotImplementedError.new ""
     end
 
-    def read_i64
+    def read_i64 : Int64
       raise NotImplementedError.new ""
     end
 
-    def read_double
+    def read_double : Float64
       raise NotImplementedError.new ""
     end
 
     # Reads a Thrift String. In Ruby 1.9+, all Strings will be returned with an Encoding of UTF-8.
     #
     # Returns a String.
-    def read_string
+    def read_string : String
       raise NotImplementedError.new ""
     end
 
@@ -187,7 +187,7 @@ module Thrift
     # with an Encoding of BINARY.
     #
     # Returns a String.
-    def read_binary
+    def read_binary : Bytes
       raise NotImplementedError.new ""
     end
 

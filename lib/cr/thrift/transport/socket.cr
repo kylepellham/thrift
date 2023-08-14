@@ -10,7 +10,7 @@ module Thrift
 
     property :handle, :timeout
 
-    def open
+    def open : TCPSocket
       last_exception = Exception.new("Could Not Resolve Address")
       Socket::Addrinfo.resolve(domain: @host, service: @port, type: Socket::Type::STREAM) do |addrinfo|
         begin
@@ -40,8 +40,7 @@ module Thrift
       begin
         if @timeout.nil? || @timeout == 0
           if handle = @handle
-            handle.write(msg)
-            handle.flush()
+            handle.send(msg)
             sent = msg.size
             if sent < msg.size
               raise TransportException.new(TransportException::TIMED_OUT, "Socket: Timed out writing #{msg.size} bytes to #{@desc}")
@@ -65,27 +64,30 @@ module Thrift
       buf = Bytes.new(sz, 0)
       read = 0
       begin
-        if @timeout.nil? || @timeout == 0
-          if handle = @handle
-            read = handle.read(buf)
-          end
+        if handle = @handle
+          p! handle
+          read, _ = handle.receive(buf)
+          p! buf
         end
-        if (read == 0)
+        if (read < 1)
           raise TransportException.new(TransportException::UNKNOWN, "Socket: Could not read #{sz} bytes from #{@desc}")
         end
       rescue ex : TransportException
-        # don't let this get caught by the StandardError handler
+        # don't let this get caught by the standard Exception handler
         raise ex
       rescue ex : Exception
         @handle.try(&.close)
         @handle = nil
+        pp "failed"
         raise TransportException.new(TransportException::NOT_OPEN, ex.message)
       end
       buf
     end
 
     def close
+      @handle.try do |handle|
         handle.close unless handle.closed?
+      end
       @handle = nil
     end
 

@@ -11,15 +11,18 @@ module Thrift
         loop do
           client = @server_transport.accept
           if client
-            trans = @transport_factory.get_transport(client)
-            prot = @protocol_factory.get_protocol(trans)
-            begin
-              loop do
-                @processor.process(prot, prot)
+            spawn do
+              trans = @transport_factory.get_transport(client)
+              prot = @protocol_factory.get_protocol(trans)
+              begin
+                loop do
+                  @processor.process(prot, prot)
+                  Fiber.yield
+                end
+              rescue Thrift::TransportException | Thrift::ProtocolException
+              ensure
+                trans.close
               end
-            rescue Thrift::TransportException | Thrift::ProtocolException
-            ensure
-              trans.close
             end
           else
             Fiber.yield

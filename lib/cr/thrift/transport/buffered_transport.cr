@@ -30,19 +30,20 @@ module Thrift
 
     def read(sz)
       @index += sz
-      ret = if (tmp = @rbuf[@index - sz..sz]).empty?
-              tmp
-            else
+
+      ret = if (tmp = @rbuf[(@index - sz)..(@index - 1)]).empty?
               Bytes.empty
+            else
+              tmp
             end
 
       if ret.empty?
         @rbuf = @transport.read(Math.max(sz, DEFAULT_BUFFER))
         @index = sz
         ret = if (tmp = @rbuf[0..sz]).empty?
-                tmp
-              else
                 ret = Bytes.empty
+              else
+                tmp
               end
       end
       ret
@@ -64,6 +65,7 @@ module Thrift
       while i < size
         if @index >= @rbuf.size
           @rbuf = @transport.read(DEFAULT_BUFFER)
+          p! @rbuf
           @index = 0
         end
 
@@ -76,7 +78,7 @@ module Thrift
     end
 
     def write(buf)
-      @wbuf.join buf
+      @wbuf = @wbuf.join buf
     end
 
     def flush
@@ -84,7 +86,6 @@ module Thrift
         @transport.write(@wbuf)
         @wbuf = Bytes.empty
       end
-
       @transport.flush
     end
 

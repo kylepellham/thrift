@@ -1,7 +1,7 @@
 require "./protocol/base_protocol.cr"
 require "./types.cr"
 module Thrift
-  class Client
+  module Client
 
     @iprot : BaseProtocol
     @oprot : BaseProtocol

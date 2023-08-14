@@ -2,9 +2,9 @@ require "./base_protocol.cr"
 
 module Thrift
   class BinaryProtocol < BaseProtocol
-    VERSION_MASK = 0xffff0000
-    VERSION_1 = 0x80000000
-    TYPE_MASK = 0x000000ff
+    VERSION_MASK = 0xffff0000_u32
+    VERSION_1 = 0x80010000_u32
+    TYPE_MASK = 0x000000ff_u32
 
     getter :strict_read, :strict_write
 
@@ -15,30 +15,31 @@ module Thrift
       @rbuf = Bytes.new(8, 0)
     end
 
-    def write_message_begin(name, type, seqid)
+    def write_message_begin(name : String, type : Thrift::MessageTypes, seqid : Int32)
       # this is necessary because we added (needed) bounds checking to 
       # write_i32, and 0x80010000 is too big for that.
       if strict_write
-        write_i16(VERSION_1 >> 16)
-        write_i16(type)
+        p! (0xffff_u16 & (VERSION_1 >> 16)).unsafe_as(Int16)
+        write_i16((0xffff_u16 & (VERSION_1 >> 16)).unsafe_as(Int16))
+        write_i16(type.to_i16)
         write_string(name)
         write_i32(seqid)
       else
         write_string(name)
-        write_byte(type)
+        write_byte(type.to_u8)
         write_i32(seqid)
       end
     end
 
     def write_struct_begin(name); nil; end
 
-    def write_field_begin(name, type, id)
-      write_byte(type)
+    def write_field_begin(name : String, type : MessageTypes, id : Int16)
+      write_byte(type.to_u8)
       write_i16(id)
     end
 
     def write_field_stop
-      write_byte(Thrift::Types::STOP)
+      write_byte(Thrift::Types::STOP.to_u8)
     end
 
     def write_map_begin(ktype, vtype, size)
@@ -61,40 +62,40 @@ module Thrift
       write_byte(bool ? 1 : 0)
     end
 
-    def write_byte(byte)
-      raise RangeError.new "" if byte < -2**31 || byte >= 2**32
-      raw = uninitialized Uint8[1]
-      IO::ByteFormat::BigEndian.encode(byte, raw.to_slice)
+    def write_byte(byte : UInt8)
+      raw = Bytes.new(1, 0)
+      IO::ByteFormat::BigEndian.encode(byte, raw)
       trans.write(raw)
     end
 
-    def write_i16(i16)
-      raw = uninitialized Uint8[2]
-      IO::ByteFormat::BigEndian.encode(i16, raw.to_slice)
+    def write_i16(i16 : Int16)
+      puts i16
+      raw = Bytes.new(2, 0)
+      IO::ByteFormat::BigEndian.encode(i16, raw)
+      p! raw
       trans.write(raw)
     end
 
-    def write_i32(i32)
-      raise RangeError.new "" if i32 < -2**31 || i32 >= 2**31
-      raw = uninitialized Uint8[4]
-      IO::ByteFormat::BigEndian.encode(i32, raw.to_slice)
+    def write_i32(i32 : Int32)
+      puts i32
+      raw = Bytes.new(4, 0)
+      IO::ByteFormat::BigEndian.encode(i32, raw)
       trans.write(raw)
     end
 
-    def write_i64(i64)
-      raise RangeError.new "" if i64 < -2**63 || i64 >= 2**64
-      raw = uninitialized Uint8[8]
-      IO::ByteFormat::BigEndian.encode(i64, raw.to_slice)
+    def write_i64(i64 : Int64)
+      raw = Bytes.new(8, 0)
+      IO::ByteFormat::BigEndian.encode(i64, raw)
       trans.write(raw)
     end
 
-    def write_double(dub)
-      raw = uninitialized Uint8[8]
-      IO::ByteFormat::BigEndian.encode(dub, raw.to_slice)
+    def write_double(dub : Float64)
+      raw = Bytes.new(8, 0)
+      IO::ByteFormat::BigEndian.encode(dub, raw)
       trans.write(raw)     
     end
 
-    def write_string(str)
+    def write_string(str : String)
       buf = str.encode("utf-8")
       write_binary(buf)
     end
@@ -104,24 +105,25 @@ module Thrift
       trans.write(buf)
     end
 
-    def read_message_begin
+    def read_message_begin : Tuple(String, UInt8, Int32)
       version = read_i32
       if version < 0
-        if (version & VERSION_MASK != VERSION_1)
+        unsigned_version = version.unsafe_as(UInt32)
+        if ((unsigned_version & VERSION_MASK) != VERSION_1)
           raise ProtocolException.new(ProtocolException::BAD_VERSION, "Missing version identifier")
         end
-        type = version & TYPE_MASK
+        type = (unsigned_version & TYPE_MASK).to_u8
         name = read_string
         seqid = read_i32
-        [name, type, seqid]
+        return name, type, seqid
       else
         if strict_read
           raise ProtocolException.new(ProtocolException::BAD_VERSION, "No version identifier, old protocol client?")
         end
-        name = trans.read_all(version)
+        encoded_name = trans.read_all(version)
         type = read_byte
         seqid = read_i32
-        [name, type, seqid]
+        return String.new(encoded_name), type, seqid
       end
     end
 
@@ -137,64 +139,66 @@ module Thrift
       end
     end
 
-    def read_map_begin
+    def read_map_begin : Tuple(UInt8, UInt8, Int32)
       ktype = read_byte
       vtype = read_byte
       size = read_i32
-      [ktype, vtype, size]
+      return ktype, vtype, size
     end
 
-    def read_list_begin
+    def read_list_begin : Tuple(UInt8, Int32)
       etype = read_byte
       size = read_i32
-      [etype, size]
+      return etype, size
     end
 
-    def read_set_begin
+    def read_set_begin : Tuple(UInt8, Int32)
       etype = read_byte
       size = read_i32
-      [etype, size]
+      return etype, size
     end
 
-    def read_bool
+    def read_bool : Bool
       byte = read_byte
       byte != 0
     end
 
-    def read_byte
+    def read_byte : UInt8
       val = trans.read_byte
       if (val > 0x7f)
-        val = 0 - ((val - 1) ^ 0xff)
+        val = (0 - ((val - 1) ^ 0xff)).to_u8
       end
       val
     end
 
-    def read_i16
+    def read_i16 : Int16
       trans.read_into_buffer(@rbuf, 2)
       val = IO::ByteFormat::BigEndian.decode(Int16, @rbuf)
     end
 
-    def read_i32
+    def read_i32 : Int32
       trans.read_into_buffer(@rbuf, 4)
       val = IO::ByteFormat::BigEndian.decode(Int32, @rbuf)
+      p! val
+      val
     end
 
-    def read_i64
+    def read_i64 : Int64
       trans.read_into_buffer(@rbuf, 8)
       val = IO::ByteFormat::BigEndian.decode(Int64, @rbuf)
     end
 
-    def read_double
+    def read_double : Float64
       trans.read_into_buffer(@rbuf, 8)
       val = IO::ByteFormat::BigEndian.decode(Float64, @rbuf)
     end
 
-    def read_string
+    def read_string : String
       buffer = read_binary
       String.new(buffer)
     end
 
-    def read_binary
+    def read_binary : Bytes
       size = read_i32
       trans.read_all(size)
     end
@@ -212,7 +216,5 @@ module Thrift
     def to_s
       "binary"
     end
-
-
   end
 end

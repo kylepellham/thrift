@@ -1,5 +1,5 @@
 module Thrift
-  enum Types
+  enum Types : UInt8
     STOP = 0
     VOID = 1
     BOOL = 2
@@ -62,7 +62,7 @@ module Thrift
     nil
   end
 
-  enum MessageTypes
+  enum MessageTypes : UInt8
     CALL = 1
     REPLY = 2
     EXCEPTION = 3
