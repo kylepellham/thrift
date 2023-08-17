@@ -1,5 +1,6 @@
 require "./protocol/base_protocol.cr"
 require "./types.cr"
+
 module Thrift
   module Client
 

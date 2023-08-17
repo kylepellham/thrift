@@ -101,7 +101,7 @@ class t_cr_generator : public t_oop_generator
    */
 
   void generate_cr(t_rb_ofstream& out, t_struct* tstruct, bool is_exception);
-  void generate_cb_struct(t_rb_ofstream& out, t_struct* tstruct, bool is_exception);
+  void generate_cr_struct(t_rb_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_cr_struct_required_validator(t_rb_ofstream& out, t_struct* tstruct);
   void generate_cr_union(t_rb_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_cr_union_validator(t_rb_ofstream& out, t_struct* tstruct);
@@ -230,7 +230,7 @@ void t_cr_generator::init_generator() {
   MKDIR(subdir.c_str());
 
   if (namespaced_) {
-    require_prefix_ = rb_namespace_to_path_prefix(program_->get_namespace("cr"));
+    require_prefix_ = cr_namespace_to_path_prefix(program_->get_namespace("cr"));
 
     string dir = require_prefix_;
     string::size_type loc;
@@ -508,8 +508,14 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
     out << " < Exception";
   }
   out << endl;
-
   out.indent_up();
+
+  if (tstruct->is_union())
+  {
+    tstruct->get_members();
+    out.indent() << "include ::Thrift::Union"
+  }
+
 
   if (is_exception) {
     generate_cr_simple_exception_constructor(out, tstruct);
