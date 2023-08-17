@@ -9,5 +9,5 @@ crystal: 1.7.2
 license: MIT
 
 target:
-  shards:
+  thrift:
     main: lib/cr/src/thrift.cr
