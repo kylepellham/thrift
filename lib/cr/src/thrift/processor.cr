@@ -22,12 +22,10 @@ module Thrift
 
     def process(iprot : BaseProtocol, oprot : BaseProtocol)
       name, type, seqid = iprot.read_message_begin
-      p! name
-      p! responds_to?(:hello)
-      if {{@type.id}}.responds?("#{name}")
+      if {{@type.id}}.methods.includes?("process_#{name}")
         begin
           pp name, type, seqid
-          spawn send("#{name}", seqid, iprot, oprot)
+          send("process_#{name}", seqid, iprot, oprot)
         rescue ex
           x = ApplicationException.new(ApplicationException::INTERNAL_ERROR, "Internal error")
           @logger.try(&.debug {"Internal error : #{ex.message}\n#{ex.backtrace.join("\n")}"})
@@ -67,11 +65,11 @@ module Thrift
     macro included
       {% verbatim do %}
         macro finished
-          
-          def self.responds?(method_name)
-            return {{@type.methods.map &.name.stringify}}.includes? method_name
+
+          def self.methods(method_name)
+            return {{@type.methods.select(&.stringify.startswith("process_")).map &.name.stringify}}
           end
-          
+
           def send(method : String, seqid : Int32, iprot : Thrift::BaseProtocol, oprot : Thrift::BaseProtocol)
             case method
             {% for method in @type.methods %}

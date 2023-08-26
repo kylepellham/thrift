@@ -200,49 +200,12 @@ module Thrift
       else
         raise ArgumentError, "wrong number of arguments (#{args.size} for 3)"
       end
-      
+
       write_field_begin(field_info[:name], field_info[:type], fid)
       write_type(field_info, value)
       write_field_end
     end
 
-    # Reads a field value based on the field information.
-    #
-    # field_info - A Hash containing the pertinent data to write:
-    #              :type   - The Thrift::Types constant that determines how the value is written.
-    #              :binary - A flag that indicates if Thrift::Types::STRING is a binary string (string without encoding).
-    #
-    # Returns the value read; object type varies based on field_info[:type].
-    def read_type(field_info)
-      # if field_info is a Fixnum, assume it is a Thrift::Types constant
-      # convert it into a field_info Hash for backwards compatibility
-      if field_info.is_a? Fixnum
-        field_info = {:type => field_info}
-      end
-
-      case field_info[:type]
-      when Types::BOOL
-        read_bool
-      when Types::BYTE
-        read_byte
-      when Types::DOUBLE
-        read_double
-      when Types::I16
-        read_i16
-      when Types::I32
-        read_i32
-      when Types::I64
-        read_i64
-      when Types::STRING
-        if field_info[:binary]
-          read_binary
-        else
-          read_string
-        end
-      else
-        raise NotImplementedError.new ""
-      end
-    end
 
     def skip(type)
       case type
@@ -302,7 +265,7 @@ module Thrift
     def get_protocol(trans)
       raise NotImplementedError.new ""
     end
-    
+
     def to_s
       "base"
     end

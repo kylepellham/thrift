@@ -2,7 +2,7 @@ require "socket"
 require "./base_transport.cr"
 
 module Thrift
-  class SocketTransport < BaseTransport
+  class Socket < BaseTransport
     @handle : TCPSocket?
     def initialize(@host="localhost", @port=9090, @timeout : Int32? = nil)
       @desc = "#{@host}:#{@port}"
@@ -12,13 +12,13 @@ module Thrift
 
     def open : TCPSocket
       last_exception = Exception.new("Could Not Resolve Address")
-      Socket::Addrinfo.resolve(domain: @host, service: @port, type: Socket::Type::STREAM) do |addrinfo|
+      ::Socket::Addrinfo.resolve(domain: @host, service: @port, type: ::Socket::Type::STREAM) do |addrinfo|
         begin
           socket = TCPSocket.new(addrinfo.family)
           socket.tcp_nodelay = true
           begin
             socket.connect(addrinfo.ip_address)
-          rescue IO::TimeoutError | Socket::ConnectError
+          rescue IO::TimeoutError | ::Socket::ConnectError
             next
           end
           @handle = socket
@@ -34,7 +34,7 @@ module Thrift
     def open?
       !(handle = @handle).nil? && !handle.closed?
     end
-      
+
     def write(msg)
       raise "closed stream" unless open?
       begin
