@@ -82,18 +82,28 @@ public:
 
 class t_cr_generator : public t_oop_generator
 {
+public:
   t_cr_generator(t_program* program,
                  const std::map<std::string, std::string> &parsed_options,
                  const std::string &)
     : t_oop_generator(program)
   {
+    namespaced_ = false;
     map<string, string>::const_iterator iter;
-    out_dir_base_ = "gen-cr"
+    for(iter = parsed_options.begin(); iter != parsed_options.end(); ++iter)
+    {
+      if(iter->first.compare("no-skeleton"))
+      {
+        continue;
+      }
+    }
+
+    out_dir_base_ = "gen-cr";
   }
 
   void init_generator() override;
   void close_generator() override;
-  std::string display_name();
+  std::string display_name() const;
 
   void generate_typedef(t_typedef *) override;
   void generate_enum(t_enum *tenum) override;
@@ -122,6 +132,7 @@ class t_cr_generator : public t_oop_generator
   void generate_field_constants(t_cr_ofstream& out, t_struct* tstruct);
   void generate_field_constructors(t_cr_ofstream& out, t_struct* tstruct);
   void generate_field_defns(t_cr_ofstream& out, t_struct* tstruct);
+  void generate_cr_struct_declaration(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_field_data(t_cr_ofstream& out,
                            t_type* field_type,
                            const std::string& field_name,
@@ -226,6 +237,8 @@ private:
 
   std::string namespace_dir_;
   std::string require_prefix_;
+
+  bool namespaced_;
 };
 
 /**
@@ -263,10 +276,10 @@ void t_cr_generator::init_generator() {
   f_consts_.open(f_consts_name.c_str());
 
   // Print header
-  f_types_ << rb_autogen_comment() << endl << render_require_thrift() << render_includes() << endl;
-  begin_namespace(f_types_, ruby_modules(program_));
+  f_types_ << cr_autogen_comment() << endl << render_require_thrift() << render_includes() << endl;
+  begin_namespace(f_types_, crystal_modules(program_));
 
-  f_consts_ << rb_autogen_comment() << endl << render_require_thrift() << "require \""
+  f_consts_ << cr_autogen_comment() << endl << render_require_thrift() << "require \""
             << require_prefix_ << underscore(program_name_) << "_types\"" << endl << endl;
   begin_namespace(f_consts_, crystal_modules(program_));
 }
@@ -280,7 +293,7 @@ string t_cr_generator::render_includes()
     t_program *included = include;
     string included_require_prefix = cr_namespace_to_path_prefix(included->get_namespace("cr"));
     string included_name = included->get_name();
-    result += "require \"" + included_require_prefix + underscore(included_name) + "_types\"" << endl;
+    result += "require \"" + included_require_prefix + underscore(included_name) + "_types\"" + endl;
   }
   if(includes.size() > 0)
   {
@@ -512,6 +525,7 @@ void t_cr_generator::generate_xception(t_struct* txception) {
 void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
                                         t_struct* tstruct,
                                         bool is_exception = false) {
+  string type_modifier = "";
   generate_rdoc(out, tstruct);
   out.indent() << "class " << type_name(tstruct);
   if (is_exception) {
@@ -522,8 +536,8 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
 
   if (tstruct->is_union())
   {
-    tstruct->get_members();
-    out.indent() << "include ::Thrift::Union"
+    type_modifier = "union_property ";
+    out.indent() << "include ::Thrift::Union";
   }
 
 
@@ -534,11 +548,6 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   generate_field_constants(out, tstruct);
   generate_field_defns(out, tstruct);
   generate_cr_struct_required_validator(out, tstruct);
-
-  for (auto &member : tstruct->get_members())
-  {
-    if(member.is_union())
-  }
 
   out.indent_down();
   out.indent() << "end" << endl << endl;
@@ -560,7 +569,7 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
 
   for (auto &field : tstruct->get_members())
   {
-    out.indent() << capitalize(field->get_name()) << " : " <<
+    out.indent() << capitalize(field->get_name()) << " = " << field->get_key() << endl;
   }
   // generate_field_constructors(out, tstruct);
 
@@ -638,6 +647,10 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
+  for(f_iter = fields.begin(); f_iter != fields.end(); ++f_iter)
+  {
+    out.indent() << (*f_iter)->get_name() << " = " << (*f_iter)->get_key() << endl;
+  }
 }
 
 void t_cr_generator::generate_field_data(t_cr_ofstream& out,
@@ -732,7 +745,7 @@ void t_cr_generator::generate_service(t_service* tservice) {
   f_service_ << "require '" << require_prefix_ << underscore(program_name_) << "_types'" << endl
              << endl;
 
-  begin_namespace(f_service_, cr_modules(tservice->get_program()));
+  begin_namespace(f_service_, crystal_modules(tservice->get_program()));
 
   f_service_.indent() << "module " << capitalize(tservice->get_name()) << endl;
   f_service_.indent_up();
@@ -745,7 +758,7 @@ void t_cr_generator::generate_service(t_service* tservice) {
   f_service_.indent_down();
   f_service_.indent() << "end" << endl << endl;
 
-  end_namespace(f_service_, ruby_modules(tservice->get_program()));
+  end_namespace(f_service_, crystal_modules(tservice->get_program()));
 
   // Close service file
   f_service_.close();
@@ -1042,6 +1055,13 @@ string t_cr_generator::function_signature(t_function* tfunction, string prefix) 
 }
 
 /**
+ * Renders the require of thrift itself, and possibly of the rubygems dependency.
+ */
+string t_cr_generator::render_require_thrift() {
+  return "require 'thrift'\n";
+}
+
+/**
  * Renders a field list
  */
 string t_cr_generator::argument_list(t_struct* tstruct) {
@@ -1074,7 +1094,7 @@ string t_cr_generator::type_name(const t_type* ttype) {
 
 string t_cr_generator::full_type_name(const t_type* ttype) {
   string prefix = "::";
-  vector<std::string> modules = ruby_modules(ttype->get_program());
+  vector<std::string> modules = crystal_modules(ttype->get_program());
   for (auto & module : modules) {
     prefix += module + "::";
   }
