@@ -13,9 +13,9 @@ module Thrift
       @oprot = oprot || iprot
     end
 
-    def send_message(name, type : ArgsClass.class, args = {} of String => String) forall ArgsClass
+    def send_message(name, type : ArgsClass.class, **args) forall ArgsClass
       @oprot.write_message_begin(name, MessageTypes::CALL, @seqid)
-      send_message_args(args_class, args)
+      send_message_args(ArgsClass, args)
     end
 
     def send_oneway_message(name, type : ArgsClass.class, args = {} of String => String) forall ArgsClass
@@ -23,11 +23,8 @@ module Thrift
       send_message_args(args_class, args)
     end
 
-    def send_message_args(type : ArgsClass.class, args) forall ArgsClass
-      data = ArgsClass.new
-      args.each do |k, v|
-        data.send("#{k.to_s}=", v)
-      end
+    def send_message_args(type : ArgsClass.class, **args) forall ArgsClass
+      data = ArgsClass.new(**args)
       begin
         data.write(@oprot)
       rescue ex : Exception

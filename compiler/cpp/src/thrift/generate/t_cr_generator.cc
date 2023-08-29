@@ -21,20 +21,20 @@
  * details.
  */
 
-#include <string>
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <vector>
-#include <algorithm>
 
+#include <sstream>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <sstream>
 
+#include "thrift/generate/t_oop_generator.h"
 #include "thrift/platform.h"
 #include "thrift/version.h"
-#include "thrift/generate/t_oop_generator.h"
 
 using std::map;
 using std::ofstream;
@@ -48,52 +48,39 @@ static const string endl = "\n"; // avoid ostream << std::endl flushes
 /**
  * A subclass of std::ofstream that includes indenting functionality.
  */
-class t_cr_ofstream : public std::ofstream
-{
+class t_cr_ofstream : public std::ofstream {
 private:
   int indent_;
 
 public:
   t_cr_ofstream() : std::ofstream(), indent_(0) {}
-  explicit t_cr_ofstream(const char * filename,
+  explicit t_cr_ofstream(const char* filename,
                          ios_base::openmode mode = ios_base::out,
                          int indent = 0)
     : std::ofstream(filename, mode), indent_(indent) {}
 
-  t_cr_ofstream &indent()
-  {
-    for (int i = 0; i < indent_; ++i)
-    {
+  t_cr_ofstream& indent() {
+    for (int i = 0; i < indent_; ++i) {
       *this << "  ";
     }
     return *this;
   }
 
-  void indent_up()
-  {
-    ++indent_;
-  }
+  void indent_up() { ++indent_; }
 
-  void indent_down()
-  {
-    --indent_;
-  }
+  void indent_down() { --indent_; }
 };
 
-class t_cr_generator : public t_oop_generator
-{
+class t_cr_generator : public t_oop_generator {
 public:
   t_cr_generator(t_program* program,
-                 const std::map<std::string, std::string> &parsed_options,
-                 const std::string &)
-    : t_oop_generator(program)
-  {
+                 const std::map<std::string, std::string>& parsed_options,
+                 const std::string&)
+    : t_oop_generator(program) {
     namespaced_ = false;
     map<string, string>::const_iterator iter;
-    for(iter = parsed_options.begin(); iter != parsed_options.end(); ++iter)
-    {
-      if(iter->first.compare("no-skeleton"))
-      {
+    for (iter = parsed_options.begin(); iter != parsed_options.end(); ++iter) {
+      if (iter->first.compare("no-skeleton")) {
         continue;
       }
     }
@@ -105,16 +92,16 @@ public:
   void close_generator() override;
   std::string display_name() const;
 
-  void generate_typedef(t_typedef *) override;
-  void generate_enum(t_enum *tenum) override;
-  void generate_const(t_const *tconst) override;
-  void generate_struct(t_struct *tstruct) override;
-  void generate_forward_declaration(t_struct *tstruct) override;
-  void generate_union(t_struct *tunion);
-  void generate_xception(t_struct *txception) override;
-  void generate_service(t_service *tservice) override;
+  void generate_typedef(t_typedef*) override;
+  void generate_enum(t_enum* tenum) override;
+  void generate_const(t_const* tconst) override;
+  void generate_struct(t_struct* tstruct) override;
+  void generate_forward_declaration(t_struct* tstruct) override;
+  void generate_union(t_struct* tunion);
+  void generate_xception(t_struct* txception) override;
+  void generate_service(t_service* tservice) override;
 
-  t_cr_ofstream &render_const_value(t_cr_ofstream &out, t_type *type, t_const_value *value);
+  t_cr_ofstream& render_const_value(t_cr_ofstream& out, t_type* type, t_const_value* value);
 
   /**
    * Struct generation code
@@ -137,7 +124,8 @@ public:
                            t_type* field_type,
                            const std::string& field_name,
                            t_const_value* field_value,
-                           bool optional);
+                           bool optional,
+                           bool is_union);
 
   /**
    * Service-level generation functions
@@ -191,6 +179,10 @@ public:
    * Helper rendering functions
    */
 
+  t_cr_ofstream &render_crystal_type(t_cr_ofstream &out,
+                                     t_type *ttype,
+                                     bool optional = false,
+                                     bool is_union = false);
   std::string cr_autogen_comment();
   std::string render_require_thrift();
   std::string render_includes();
@@ -279,24 +271,24 @@ void t_cr_generator::init_generator() {
   f_types_ << cr_autogen_comment() << endl << render_require_thrift() << render_includes() << endl;
   begin_namespace(f_types_, crystal_modules(program_));
 
-  f_consts_ << cr_autogen_comment() << endl << render_require_thrift() << "require \""
-            << require_prefix_ << underscore(program_name_) << "_types\"" << endl << endl;
+  f_consts_ << cr_autogen_comment() << endl
+            << render_require_thrift() << "require \"" << require_prefix_
+            << underscore(program_name_) << "_types\"" << endl
+            << endl;
   begin_namespace(f_consts_, crystal_modules(program_));
 }
 
-string t_cr_generator::render_includes()
-{
-  const vector<t_program*> &includes = program_->get_includes();
+string t_cr_generator::render_includes() {
+  const vector<t_program*>& includes = program_->get_includes();
   string result = "";
-  for (auto include : includes)
-  {
-    t_program *included = include;
+  for (auto include : includes) {
+    t_program* included = include;
     string included_require_prefix = cr_namespace_to_path_prefix(included->get_namespace("cr"));
     string included_name = included->get_name();
-    result += "require \"" + included_require_prefix + underscore(included_name) + "_types\"" + endl;
+    result
+        += "require \"" + included_require_prefix + underscore(included_name) + "_types\"" + endl;
   }
-  if(includes.size() > 0)
-  {
+  if (includes.size() > 0) {
     result += endl;
   }
   return result;
@@ -305,8 +297,7 @@ string t_cr_generator::render_includes()
 /**
  * Autogen'd comment
  */
-string t_cr_generator::cr_autogen_comment()
-{
+string t_cr_generator::cr_autogen_comment() {
   return std::string("#\n") + "# Autogenerated by Thrift Compiler (" + THRIFT_VERSION + ")\n"
          + "#\n" + "# DO NOT EDIT UNLESS YOU ARE SURE THAT YOU KNOW WHAT YOU ARE DOING\n" + "#\n";
 }
@@ -314,8 +305,7 @@ string t_cr_generator::cr_autogen_comment()
 /**
  * Closes the type files
  */
-void t_cr_generator::close_generator()
-{
+void t_cr_generator::close_generator() {
   // Close types file
   end_namespace(f_types_, crystal_modules(program_));
   end_namespace(f_consts_, crystal_modules(program_));
@@ -328,9 +318,7 @@ void t_cr_generator::close_generator()
  *
  * @param ttypedef The type definition
  */
-void t_cr_generator::generate_typedef(t_typedef *)
-{
-}
+void t_cr_generator::generate_typedef(t_typedef*) {}
 
 /**
  * Generates code for an enumerated type. Done using a class to scope
@@ -338,8 +326,7 @@ void t_cr_generator::generate_typedef(t_typedef *)
  *
  * @param tenum The enumeration
  */
-void t_cr_generator::generate_enum(t_enum* tenum)
-{
+void t_cr_generator::generate_enum(t_enum* tenum) {
   f_types_.indent() << "enum " << capitalize(tenum->get_name()) << endl;
   f_types_.indent_up();
 
@@ -348,7 +335,7 @@ void t_cr_generator::generate_enum(t_enum* tenum)
   for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
     int value = (*c_iter)->get_value();
 
-    string name = capitalize(camelcase((*c_iter)->get_name()));
+    string name = capitalize(underscore((*c_iter)->get_name()));
 
     generate_rdoc(f_types_, *c_iter);
     f_types_.indent() << name << " = " << value << endl;
@@ -384,7 +371,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
     t_base_type::t_base tbase = ((t_base_type*)type)->get_base();
     switch (tbase) {
     case t_base_type::TYPE_STRING:
-      out << "%q\"" << get_escaped_string(value) << '"';
+      out << "%q(" << get_escaped_string(value) << ')';
       break;
     case t_base_type::TYPE_BOOL:
       out << (value->get_integer() > 0 ? "true" : "false");
@@ -433,6 +420,8 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
   } else if (type->is_map()) {
     t_type* ktype = ((t_map*)type)->get_key_type();
     t_type* vtype = ((t_map*)type)->get_val_type();
+    render_crystal_type(out, type);
+
     out << "{" << endl;
     out.indent_up();
     const map<t_const_value*, t_const_value*, t_const_value::value_compare>& val = value->get_map();
@@ -443,8 +432,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
       render_const_value(out, vtype, v_iter->second) << "," << endl;
     }
     out.indent_down();
-    out.indent() << "}"
-    << " of " << ktype->get_name() << " => " << vtype->get_name();
+    out.indent() << "}";
   } else if (type->is_list() || type->is_set()) {
     t_type* etype;
     if (type->is_list()) {
@@ -452,11 +440,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
     } else {
       etype = ((t_set*)type)->get_elem_type();
     }
-    if (type->is_set()) {
-      out << "Set.new([" << endl;
-    } else {
-      out << "[" << endl;
-    }
+    render_crystal_type(out, type) << "{" << endl;
     out.indent_up();
     const vector<t_const_value*>& val = value->get_list();
     vector<t_const_value*>::const_iterator v_iter;
@@ -465,11 +449,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
       render_const_value(out, etype, *v_iter) << "," << endl;
     }
     out.indent_down();
-    if (type->is_set()) {
-      out.indent() << "])";
-    } else {
-      out.indent() << "]";
-    }
+    out.indent() << "}";
   } else {
     throw "CANNOT GENERATE CONSTANT FOR TYPE: " + type->get_name();
   }
@@ -498,11 +478,10 @@ void t_cr_generator::generate_forward_declaration(t_struct* tstruct) {
   generate_cr_struct_declaration(f_types_, tstruct, tstruct->is_xception());
 }
 
-void t_cr_generator::generate_cr_struct_declaration(t_cr_ofstream& out, t_struct* tstruct, bool is_exception) {
+void t_cr_generator::generate_cr_struct_declaration(t_cr_ofstream& out,
+                                                    t_struct* tstruct,
+                                                    bool is_exception) {
   out.indent() << "class " << type_name(tstruct);
-  if (tstruct->is_union()) {
-    out << " < ::Thrift::Union";
-  }
   if (is_exception) {
     out << " < ::Thrift::Exception";
   }
@@ -525,7 +504,6 @@ void t_cr_generator::generate_xception(t_struct* txception) {
 void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
                                         t_struct* tstruct,
                                         bool is_exception = false) {
-  string type_modifier = "";
   generate_rdoc(out, tstruct);
   out.indent() << "class " << type_name(tstruct);
   if (is_exception) {
@@ -533,13 +511,6 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   }
   out << endl;
   out.indent_up();
-
-  if (tstruct->is_union())
-  {
-    type_modifier = "union_property ";
-    out.indent() << "include ::Thrift::Union";
-  }
-
 
   if (is_exception) {
     generate_cr_simple_exception_constructor(out, tstruct);
@@ -561,20 +532,14 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
                                        bool is_exception = false) {
   (void)is_exception;
   generate_rdoc(out, tstruct);
-  out.indent() << "lib UnionTypes" << endl;
+  out.indent() << "class " << type_name(tstruct) << endl;
   out.indent_up();
-  out.indent() << "union " << type_name(tstruct) << endl;
+  out.indent() << "include ::Thrift::Union" << endl;
 
-  out.indent_up();
-
-  for (auto &field : tstruct->get_members())
-  {
-    out.indent() << capitalize(field->get_name()) << " = " << field->get_key() << endl;
-  }
   // generate_field_constructors(out, tstruct);
 
-  // generate_field_constants(out, tstruct);
-  // generate_field_defns(out, tstruct);
+  generate_field_constants(out, tstruct);
+  generate_field_defns(out, tstruct);
   generate_cr_union_validator(out, tstruct);
 
   out.indent_down();
@@ -643,13 +608,104 @@ void t_cr_generator::generate_field_constants(t_cr_ofstream& out, t_struct* tstr
   out << endl;
 }
 
+t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out, t_type* ttype, bool optional, bool is_union) {
+
+  ttype = get_true_type(ttype);
+  if(ttype->is_base_type())
+  {
+    t_base_type::t_base base = ((t_base_type*)ttype)->get_base();
+    switch (base) {
+    case t_base_type::TYPE_BOOL:
+      out << "Bool";
+      break;
+    case t_base_type::TYPE_STRING:
+      out << "String";
+      break;
+    case t_base_type::TYPE_VOID:
+      out << "Nil";
+      break;
+    case t_base_type::TYPE_UUID:
+    case t_base_type::TYPE_I8:
+      out << "Int8";
+      break;
+    case t_base_type::TYPE_I16:
+      out << "Int16";
+      break;
+    case t_base_type::TYPE_I32:
+      out << "Int32";
+      break;
+    case t_base_type::TYPE_I64:
+      out << "Int64";
+      break;
+    case t_base_type::TYPE_DOUBLE:
+      out << "Float64";
+      break;
+    default:
+      break;
+    }
+  }
+  else if(ttype->is_enum())
+  {
+    out << full_type_name(ttype);
+  }
+  else if(ttype->is_xception() || ttype->is_struct())
+  {
+    out << full_type_name(ttype);
+  }
+  else if(ttype->is_map())
+  {
+    out << "Hash(";
+    render_crystal_type(out, ((t_map *)ttype)->get_key_type())
+    << ", ";
+    render_crystal_type(out, ((t_map *)ttype)->get_val_type())
+    << ")";
+  }
+  else if(ttype->is_list() || ttype->is_set())
+  {
+    t_type *ele_type;
+    if(ttype->is_list())
+    {
+      ele_type = ((t_list *)ttype)->get_elem_type();
+      out << "Array(";
+      render_crystal_type(out, ele_type)
+      << ')';
+    }
+    else
+    {
+      ele_type = ((t_set *)ttype)->get_elem_type();
+      out << "Set(";
+      render_crystal_type(out, ele_type)
+      << ')';
+    }
+
+  }
+  if(optional && !is_union)
+  {
+    out << " | Nil";
+  }
+  return out;
+}
+
 void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct) {
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
-  for(f_iter = fields.begin(); f_iter != fields.end(); ++f_iter)
-  {
-    out.indent() << (*f_iter)->get_name() << " = " << (*f_iter)->get_key() << endl;
+  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
+    if(tstruct->is_union())
+    {
+      out.indent() << "union_property ";
+    }
+    else
+    {
+      out.indent() << "property ";
+    }
+    generate_field_data(out,
+                        (*f_iter)->get_type(),
+                        (*f_iter)->get_name(),
+                        (*f_iter)->get_value(),
+                        (*f_iter)->get_req() == t_field::T_OPTIONAL,
+                        tstruct->is_union());
+    out << endl;
   }
 }
 
@@ -657,56 +713,21 @@ void t_cr_generator::generate_field_data(t_cr_ofstream& out,
                                          t_type* field_type,
                                          const std::string& field_name = "",
                                          t_const_value* field_value = nullptr,
-                                         bool optional = false) {
-  field_type = get_true_type(field_type);
+                                         bool optional = false,
+                                         bool is_union = false) {
+  // field_type = get_true_type(field_type);
 
-  // Begin this field's defn
-  out << "{:type => " << type_to_enum(field_type);
-
-  if (!field_name.empty()) {
-    out << ", :name => '" << field_name << "'";
-  }
-
-  if (field_value != nullptr) {
-    out << ", :default => ";
+  out << field_name << " : ";
+  render_crystal_type(out, get_true_type(field_type), optional);
+  if(field_value != nullptr)
+  {
+    out << " = ";
     render_const_value(out, field_type, field_value);
   }
-
-  if (!field_type->is_base_type()) {
-    if (field_type->is_struct() || field_type->is_xception()) {
-      out << ", :class => " << full_type_name((t_struct*)field_type);
-    } else if (field_type->is_list()) {
-      out << ", :element => ";
-      generate_field_data(out, ((t_list*)field_type)->get_elem_type());
-    } else if (field_type->is_map()) {
-      out << ", :key => ";
-      generate_field_data(out, ((t_map*)field_type)->get_key_type());
-      out << ", :value => ";
-      generate_field_data(out, ((t_map*)field_type)->get_val_type());
-    } else if (field_type->is_set()) {
-      out << ", :element => ";
-      generate_field_data(out, ((t_set*)field_type)->get_elem_type());
-    }
-  } else {
-    if (((t_base_type*)field_type)->is_binary()) {
-      out << ", :binary => true";
-    }
-  }
-
-  if (optional) {
-    out << ", :optional => true";
-  }
-
-  if (field_type->is_enum()) {
-    out << ", :enum_class => " << full_type_name(field_type);
-  }
-
-  // End of this field's defn
-  out << "}";
 }
 
 void t_cr_generator::begin_namespace(t_cr_ofstream& out, vector<std::string> modules) {
-  for (auto & module : modules) {
+  for (auto& module : modules) {
     out.indent() << "module " << module << endl;
     out.indent_up();
   }
@@ -726,23 +747,24 @@ void t_cr_generator::end_namespace(t_cr_ofstream& out, vector<std::string> modul
  * @param tservice The service definition
  */
 void t_cr_generator::generate_service(t_service* tservice) {
-  string f_service_name = namespace_dir_ + underscore(service_name_) + ".rb";
+  string f_service_name = namespace_dir_ + underscore(service_name_) + ".cr";
   f_service_.open(f_service_name.c_str());
 
   f_service_ << cr_autogen_comment() << endl << render_require_thrift();
 
   if (tservice->get_extends() != nullptr) {
     if (namespaced_) {
-      f_service_ << "require '" << cr_namespace_to_path_prefix(
-                                       tservice->get_extends()->get_program()->get_namespace("rb"))
-                 << underscore(tservice->get_extends()->get_name()) << "'" << endl;
+      f_service_ << "require \""
+                 << cr_namespace_to_path_prefix(
+                        tservice->get_extends()->get_program()->get_namespace("cr"))
+                 << underscore(tservice->get_extends()->get_name()) << "\"" << endl;
     } else {
-      f_service_ << "require '" << require_prefix_
-                 << underscore(tservice->get_extends()->get_name()) << "'" << endl;
+      f_service_ << "require \"" << require_prefix_
+                 << underscore(tservice->get_extends()->get_name()) << "\"" << endl;
     }
   }
 
-  f_service_ << "require '" << require_prefix_ << underscore(program_name_) << "_types'" << endl
+  f_service_ << "require \"" << require_prefix_ << underscore(program_name_) << "_types\"" << endl
              << endl;
 
   begin_namespace(f_service_, crystal_modules(tservice->get_program()));
@@ -863,10 +885,10 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
     std::string argsname = capitalize((*f_iter)->get_name() + "_args");
     std::string messageSendProc = (*f_iter)->is_oneway() ? "send_oneway_message" : "send_message";
 
-    f_service_.indent() << messageSendProc << "('" << funname << "', " << argsname;
+    f_service_.indent() << messageSendProc << "(\"" << funname << "\", " << argsname;
 
     for (fld_iter = fields.begin(); fld_iter != fields.end(); ++fld_iter) {
-      f_service_ << ", :" << (*fld_iter)->get_name() << " => " << (*fld_iter)->get_name();
+      f_service_ << ", :" << (*fld_iter)->get_name() << " = " << (*fld_iter)->get_name();
     }
 
     f_service_ << ")" << endl;
@@ -878,8 +900,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       std::string resultname = capitalize((*f_iter)->get_name() + "_result");
       t_struct noargs(program_);
 
-      t_function recv_function((*f_iter)->get_returntype(),
-                               string("recv_") + (*f_iter)->get_name(),
+      t_function recv_function((*f_iter)->get_returntype(), string("recv_") + (*f_iter)->get_name(),
                                &noargs);
       // Open function
       f_service_ << endl;
@@ -914,8 +935,8 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       } else {
         f_service_.indent() << "raise "
                                "::Thrift::ApplicationException.new(::Thrift::ApplicationException::"
-                               "MISSING_RESULT, '" << (*f_iter)->get_name()
-                            << " failed: unknown result')" << endl;
+                               "MISSING_RESULT, \""
+                            << (*f_iter)->get_name() << " failed: unknown result\")" << endl;
       }
 
       // Close function
@@ -1015,8 +1036,8 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
   if (!tfunction->is_oneway() && xceptions.size() > 0) {
     f_service_.indent_down();
     for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
-      f_service_.indent() << "rescue " << full_type_name((*x_iter)->get_type()) << " => "
-                          << (*x_iter)->get_name() << endl;
+      f_service_.indent() << "rescue " << (*x_iter)->get_name() << " : "
+                          << full_type_name((*x_iter)->get_type()) << endl;
       if (!tfunction->is_oneway()) {
         f_service_.indent_up();
         f_service_.indent() << "result." << (*x_iter)->get_name() << " = " << (*x_iter)->get_name()
@@ -1035,7 +1056,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
     return;
   }
 
-  f_service_.indent() << "write_result(result, oprot, '" << tfunction->get_name() << "', seqid)"
+  f_service_.indent() << "write_result(result, oprot, \"" << tfunction->get_name() << "\", seqid)"
                       << endl;
 
   // Close function
@@ -1058,7 +1079,7 @@ string t_cr_generator::function_signature(t_function* tfunction, string prefix) 
  * Renders the require of thrift itself, and possibly of the rubygems dependency.
  */
 string t_cr_generator::render_require_thrift() {
-  return "require 'thrift'\n";
+  return "require \"thrift\"\n";
 }
 
 /**
@@ -1095,7 +1116,7 @@ string t_cr_generator::type_name(const t_type* ttype) {
 string t_cr_generator::full_type_name(const t_type* ttype) {
   string prefix = "::";
   vector<std::string> modules = crystal_modules(ttype->get_program());
-  for (auto & module : modules) {
+  for (auto& module : modules) {
     prefix += module + "::";
   }
   return prefix + type_name(ttype);
@@ -1178,7 +1199,8 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
     t_field* field = (*f_iter);
     if (field->get_req() == t_field::T_REQUIRED) {
       out.indent() << "raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, "
-                      "'Required field " << field->get_name() << " is unset!')";
+                      "\"Required field "
+                   << field->get_name() << " is unset!\")";
       if (field->get_type()->is_bool()) {
         out << " if @" << field->get_name() << ".nil?";
       } else {
@@ -1198,7 +1220,8 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
                    << field->get_name() << ")" << endl;
       out.indent_up();
       out.indent() << "raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, "
-                      "'Invalid value of field " << field->get_name() << "!')" << endl;
+                      "\"Invalid value of field "
+                   << field->get_name() << "!\")" << endl;
       out.indent_down();
       out.indent() << "end" << endl;
     }
@@ -1208,6 +1231,12 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
   out.indent() << "end" << endl << endl;
 }
 
+void t_cr_generator::generate_deserialize_field(t_cr_ofstream& out,
+                                                t_field* tfield,
+                                                std::string prefix = "",
+                                                bool inclass = false);
+
+
 void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* tstruct) {
   out.indent() << "def validate" << endl;
   out.indent_up();
@@ -1215,9 +1244,9 @@ void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* t
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
-  out.indent()
-      << "raise(StandardError, 'Union fields are not set.') if get_set_field.nil? || get_value.nil?"
-      << endl;
+  out.indent() << "raise(StandardError, \"Union fields are not set.\") if get_set_field.nil? || "
+                  "get_value.nil?"
+               << endl;
 
   // if field is an enum, check that its value is valid
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
@@ -1227,9 +1256,9 @@ void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* t
       out.indent() << "if get_set_field == :" << field->get_name() << endl;
       out.indent() << "  raise "
                       "::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, "
-                      "'Invalid value of field " << field->get_name() << "!') unless "
-                   << full_type_name(field->get_type()) << "::VALID_VALUES.include?(get_value)"
-                   << endl;
+                      "\"Invalid value of field "
+                   << field->get_name() << "!\") unless " << full_type_name(field->get_type())
+                   << "::VALID_VALUES.include?(get_value)" << endl;
       out.indent() << "end" << endl;
     }
   }
@@ -1241,7 +1270,6 @@ void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* t
 std::string t_cr_generator::display_name() const {
   return "Crystal";
 }
-
 
 THRIFT_REGISTER_GENERATOR(
     cr,
