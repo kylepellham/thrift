@@ -108,7 +108,8 @@ public:
    */
 
   void generate_cr(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
-  void generate_cr_struct(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
+  void generate_cr_struct(t_cr_ofstream& out, t_struct* tstruct, bool is_exception, bool is_helper);
+  void generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_struct_required_validator(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_union(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_cr_union_validator(t_cr_ofstream& out, t_struct* tstruct);
@@ -116,6 +117,7 @@ public:
   void generate_cr_simple_constructor(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_simple_exception_constructor(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_struct_decleration();
+  void generate_serialize_struct(t_cr_ofstream& out, t_struct* tstruct, string prefix);
   void generate_field_constants(t_cr_ofstream& out, t_struct* tstruct);
   void generate_field_constructors(t_cr_ofstream& out, t_struct* tstruct);
   void generate_field_defns(t_cr_ofstream& out, t_struct* tstruct);
@@ -126,6 +128,9 @@ public:
                            t_const_value* field_value,
                            bool optional,
                            bool is_union);
+  void generate_union_field_data(t_cr_ofstream& out,
+                                 t_type* field_type,
+                                 const std::string& field_name);
 
   /**
    * Service-level generation functions
@@ -136,6 +141,7 @@ public:
   void generate_service_client(t_service* tservice);
   void generate_service_server(t_service* tservice);
   void generate_process_function(t_service* tservice, t_function* tfunction);
+  void generate_service_skeleton(t_service* tservice);
 
   /**
    * Serialization constructs
@@ -160,8 +166,6 @@ public:
 
   void generate_serialize_field(t_cr_ofstream& out, t_field* tfield, std::string prefix = "");
 
-  void generate_serialize_struct(t_cr_ofstream& out, t_struct* tstruct, std::string prefix = "");
-
   void generate_serialize_container(t_cr_ofstream& out, t_type* ttype, std::string prefix = "");
 
   void generate_serialize_map_element(t_cr_ofstream& out,
@@ -179,10 +183,11 @@ public:
    * Helper rendering functions
    */
 
-  t_cr_ofstream &render_crystal_type(t_cr_ofstream &out,
-                                     t_type *ttype,
+  t_cr_ofstream& render_crystal_type(t_cr_ofstream& out,
+                                     t_type* ttype,
                                      bool optional = false,
                                      bool is_union = false);
+  void generate_struct_writer(t_cr_ofstream& out, t_struct* tstruct);
   std::string cr_autogen_comment();
   std::string render_require_thrift();
   std::string render_includes();
@@ -286,7 +291,7 @@ string t_cr_generator::render_includes() {
     string included_require_prefix = cr_namespace_to_path_prefix(included->get_namespace("cr"));
     string included_name = included->get_name();
     result
-        += "require \"" + included_require_prefix + underscore(included_name) + "_types\"" + endl;
+        += "require \"./"/* + included_require_prefix */ + underscore(included_name) + "_types.cr\"" + endl;
   }
   if (includes.size() > 0) {
     result += endl;
@@ -463,7 +468,7 @@ void t_cr_generator::generate_struct(t_struct* tstruct) {
   if (tstruct->is_union()) {
     generate_cr_union(f_types_, tstruct, false);
   } else {
-    generate_cr_struct(f_types_, tstruct, false);
+    generate_cr_struct(f_types_, tstruct, false, false);
   }
 }
 
@@ -495,7 +500,7 @@ void t_cr_generator::generate_cr_struct_declaration(t_cr_ofstream& out,
  * @param txception The struct definition
  */
 void t_cr_generator::generate_xception(t_struct* txception) {
-  generate_cr_struct(f_types_, txception, true);
+  generate_cr_struct(f_types_, txception, true, false);
 }
 
 /**
@@ -503,7 +508,8 @@ void t_cr_generator::generate_xception(t_struct* txception) {
  */
 void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
                                         t_struct* tstruct,
-                                        bool is_exception = false) {
+                                        bool is_exception = false,
+                                        bool is_helper = false) {
   generate_rdoc(out, tstruct);
   out.indent() << "class " << type_name(tstruct);
   if (is_exception) {
@@ -518,10 +524,22 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
 
   generate_field_constants(out, tstruct);
   generate_field_defns(out, tstruct);
+  generate_field_constructors(out, tstruct);
   generate_cr_struct_required_validator(out, tstruct);
+  // if (is_helper) {
+    generate_struct_writer(out, tstruct);
+  // }
 
   out.indent_down();
   out.indent() << "end" << endl << endl;
+}
+
+void generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
+{
+  const vector<t_field*>& fields = tstruct->get_members();
+  vector<t_field*>::const_iterator f_iter = fields.cbegin();
+  out.indent_up();
+  out.indent() << "def initialize(";
 }
 
 /**
@@ -548,25 +566,34 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
 
 void t_cr_generator::generate_field_constructors(t_cr_ofstream& out, t_struct* tstruct) {
 
-  out.indent() << "class << self" << endl;
-  out.indent_up();
+  // out.indent() << "class << self" << endl;
+  // out.indent_up();
 
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
+
+  out.indent() << "def initialize(";
+  bool first = true;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    if (f_iter != fields.begin()) {
-      out << endl;
+    // if (f_iter != fields.begin()) {
+    //   out << endl;
+    // }
+    std::string field_name = "@" + (*f_iter)->get_name();
+    if (first) {
+      first = false;
+    } else {
+      out << ", ";
     }
-    std::string field_name = (*f_iter)->get_name();
-
-    out.indent() << "def " << field_name << "(val)" << endl;
-    out.indent() << "  " << tstruct->get_name() << ".new(:" << field_name << ", val)" << endl;
-    out.indent() << "end" << endl;
+    out << field_name;
+    // out.indent() << "  " << tstruct->get_name() << ".new(:" << field_name << ", val)" << endl;
+    // out.indent() << "end" << endl;
   }
-
-  out.indent_down();
+  out << ")" << endl;
   out.indent() << "end" << endl;
+
+  // out.indent_down();
+  // out.indent() << "end" << endl;
 
   out << endl;
 }
@@ -608,11 +635,13 @@ void t_cr_generator::generate_field_constants(t_cr_ofstream& out, t_struct* tstr
   out << endl;
 }
 
-t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out, t_type* ttype, bool optional, bool is_union) {
+t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out,
+                                                   t_type* ttype,
+                                                   bool optional,
+                                                   bool is_union) {
 
   ttype = get_true_type(ttype);
-  if(ttype->is_base_type())
-  {
+  if (ttype->is_base_type()) {
     t_base_type::t_base base = ((t_base_type*)ttype)->get_base();
     switch (base) {
     case t_base_type::TYPE_BOOL:
@@ -643,44 +672,27 @@ t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out, t_type* t
     default:
       break;
     }
-  }
-  else if(ttype->is_enum())
-  {
+  } else if (ttype->is_enum()) {
     out << full_type_name(ttype);
-  }
-  else if(ttype->is_xception() || ttype->is_struct())
-  {
+  } else if (ttype->is_xception() || ttype->is_struct()) {
     out << full_type_name(ttype);
-  }
-  else if(ttype->is_map())
-  {
+  } else if (ttype->is_map()) {
     out << "Hash(";
-    render_crystal_type(out, ((t_map *)ttype)->get_key_type())
-    << ", ";
-    render_crystal_type(out, ((t_map *)ttype)->get_val_type())
-    << ")";
-  }
-  else if(ttype->is_list() || ttype->is_set())
-  {
-    t_type *ele_type;
-    if(ttype->is_list())
-    {
-      ele_type = ((t_list *)ttype)->get_elem_type();
+    render_crystal_type(out, ((t_map*)ttype)->get_key_type()) << ", ";
+    render_crystal_type(out, ((t_map*)ttype)->get_val_type()) << ")";
+  } else if (ttype->is_list() || ttype->is_set()) {
+    t_type* ele_type;
+    if (ttype->is_list()) {
+      ele_type = ((t_list*)ttype)->get_elem_type();
       out << "Array(";
-      render_crystal_type(out, ele_type)
-      << ')';
-    }
-    else
-    {
-      ele_type = ((t_set *)ttype)->get_elem_type();
+      render_crystal_type(out, ele_type) << ')';
+    } else {
+      ele_type = ((t_set*)ttype)->get_elem_type();
       out << "Set(";
-      render_crystal_type(out, ele_type)
-      << ')';
+      render_crystal_type(out, ele_type) << ')';
     }
-
   }
-  if(optional && !is_union)
-  {
+  if (optional && !is_union) {
     out << " | Nil";
   }
   return out;
@@ -691,20 +703,14 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
   vector<t_field*>::const_iterator f_iter;
 
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    if(tstruct->is_union())
-    {
+    if (tstruct->is_union()) {
       out.indent() << "union_property ";
-    }
-    else
-    {
+      generate_union_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name());
+    } else {
       out.indent() << "property ";
+      generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name(), (*f_iter)->get_value(),
+                          (*f_iter)->get_req() == t_field::T_OPTIONAL, tstruct->is_union());
     }
-    generate_field_data(out,
-                        (*f_iter)->get_type(),
-                        (*f_iter)->get_name(),
-                        (*f_iter)->get_value(),
-                        (*f_iter)->get_req() == t_field::T_OPTIONAL,
-                        tstruct->is_union());
     out << endl;
   }
 }
@@ -719,11 +725,18 @@ void t_cr_generator::generate_field_data(t_cr_ofstream& out,
 
   out << field_name << " : ";
   render_crystal_type(out, get_true_type(field_type), optional);
-  if(field_value != nullptr)
-  {
+  if (field_value != nullptr) {
     out << " = ";
     render_const_value(out, field_type, field_value);
   }
+}
+
+void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
+                                               t_type* field_type,
+                                               const std::string& field_name) {
+
+  out << field_name << " : ";
+  render_crystal_type(out, get_true_type(field_type));
 }
 
 void t_cr_generator::begin_namespace(t_cr_ofstream& out, vector<std::string> modules) {
@@ -754,17 +767,17 @@ void t_cr_generator::generate_service(t_service* tservice) {
 
   if (tservice->get_extends() != nullptr) {
     if (namespaced_) {
-      f_service_ << "require \""
+      f_service_ << "require \"./"
                  << cr_namespace_to_path_prefix(
                         tservice->get_extends()->get_program()->get_namespace("cr"))
-                 << underscore(tservice->get_extends()->get_name()) << "\"" << endl;
+                 << underscore(tservice->get_extends()->get_name()) << ".cr\"" << endl;
     } else {
-      f_service_ << "require \"" << require_prefix_
-                 << underscore(tservice->get_extends()->get_name()) << "\"" << endl;
+      f_service_ << "require \"./" << require_prefix_
+                 << underscore(tservice->get_extends()->get_name()) << ".cr\"" << endl;
     }
   }
 
-  f_service_ << "require \"" << require_prefix_ << underscore(program_name_) << "_types\"" << endl
+  f_service_ << "require \"./" << require_prefix_ << underscore(program_name_) << "_types.cr\"" << endl
              << endl;
 
   begin_namespace(f_service_, crystal_modules(tservice->get_program()));
@@ -776,6 +789,7 @@ void t_cr_generator::generate_service(t_service* tservice) {
   generate_service_client(tservice);
   generate_service_server(tservice);
   generate_service_helpers(tservice);
+  generate_service_skeleton(tservice);
 
   f_service_.indent_down();
   f_service_.indent() << "end" << endl << endl;
@@ -799,7 +813,7 @@ void t_cr_generator::generate_service_helpers(t_service* tservice) {
 
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     t_struct* ts = (*f_iter)->get_arglist();
-    generate_cr_struct(f_service_, ts);
+    generate_cr_struct(f_service_, ts, false, true);
     generate_cr_function_helpers(*f_iter);
   }
 }
@@ -822,7 +836,7 @@ void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
     result.append(*f_iter);
   }
-  generate_cr_struct(f_service_, &result);
+  generate_cr_struct(f_service_, &result, false, true);
 }
 
 /**
@@ -888,7 +902,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
     f_service_.indent() << messageSendProc << "(\"" << funname << "\", " << argsname;
 
     for (fld_iter = fields.begin(); fld_iter != fields.end(); ++fld_iter) {
-      f_service_ << ", :" << (*fld_iter)->get_name() << " = " << (*fld_iter)->get_name();
+      f_service_ << ", " << (*fld_iter)->get_name() << ": " << (*fld_iter)->get_name();
     }
 
     f_service_ << ")" << endl;
@@ -958,19 +972,21 @@ void t_cr_generator::generate_service_server(t_service* tservice) {
   // Generate the dispatch methods
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
+  std::string svcname = tservice->get_name();
 
   string extends = "";
   string extends_processor = "";
-  if (tservice->get_extends() != nullptr) {
+  if (tservice->get_extends()) {
     extends = full_type_name(tservice->get_extends());
     extends_processor = " < " + extends + "::Processor ";
   }
 
   // Generate the header portion
-  f_service_.indent() << "class Processor" << extends_processor << endl;
+  f_service_.indent() << "class Processor(T) < ::Thrift::Processor" << extends_processor << endl;
   f_service_.indent_up();
+  f_service_.indent() << "@handler : T" << endl << endl;
 
-  f_service_.indent() << "include ::Thrift::Processor" << endl << endl;
+  // f_service_.indent() << "include ::Thrift::Processor" << endl << endl;
 
   // Generate the process subfunctions
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
@@ -989,7 +1005,7 @@ void t_cr_generator::generate_service_server(t_service* tservice) {
 void t_cr_generator::generate_process_function(t_service* tservice, t_function* tfunction) {
   (void)tservice;
   // Open function
-  f_service_.indent() << "def process_" << tfunction->get_name() << "(seqid, iprot, oprot)" << endl;
+  f_service_.indent() << "def process_" << decapitalize(tfunction->get_name()) << "(seqid, iprot, oprot)" << endl;
   f_service_.indent_up();
 
   string argsname = capitalize(tfunction->get_name()) + "_args";
@@ -1021,7 +1037,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
   if (!tfunction->is_oneway() && !tfunction->get_returntype()->is_void()) {
     f_service_ << "result.success = ";
   }
-  f_service_ << "@handler." << tfunction->get_name() << "(";
+  f_service_ << "@handler." << decapitalize(tfunction->get_name()) << "(";
   bool first = true;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
     if (first) {
@@ -1072,7 +1088,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
  */
 string t_cr_generator::function_signature(t_function* tfunction, string prefix) {
   // TODO(mcslee): Nitpicky, no ',' if argument_list is empty
-  return prefix + tfunction->get_name() + "(" + argument_list(tfunction->get_arglist()) + ")";
+  return prefix + decapitalize(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ")";
 }
 
 /**
@@ -1233,9 +1249,11 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
 
 void t_cr_generator::generate_deserialize_field(t_cr_ofstream& out,
                                                 t_field* tfield,
-                                                std::string prefix = "",
-                                                bool inclass = false);
+                                                std::string prefix,
+                                                bool inclass)
+{
 
+}
 
 void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* tstruct) {
   out.indent() << "def validate" << endl;
@@ -1269,6 +1287,152 @@ void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* t
 
 std::string t_cr_generator::display_name() const {
   return "Crystal";
+}
+
+/**
+ * Generates a skeleton file of a server
+ *
+ * @param tservice The service to generate a server for.
+ */
+void t_cr_generator::generate_service_skeleton(t_service* tservice) {
+  string svcname = tservice->get_name();
+
+  // Service implementation file includes
+  string f_skeleton_name = get_out_dir() + lowercase(svcname) + "_server.skeleton.cr";
+
+  string ns = ""; //namespace_prefix(tservice->get_program()->get_namespace("cr"));
+
+  ofstream_with_content_based_conditional_update f_skeleton;
+  f_skeleton.open(f_skeleton_name.c_str());
+  f_skeleton << "# This autogenerated skeleton file illustrates how to build a server." << endl
+             << "# You should copy it to another filename to avoid overwriting it." << endl << endl
+            //  << "require \"" << get_include_prefix(*get_program()) << svcname << ".h\"" << endl
+             << "require \"thrift\"" << endl
+             << "include Thrift" << endl;
+
+  // the following code would not compile:
+  // using namespace ;
+  // using namespace ::;
+  if ((!ns.empty()) && (ns.compare(" ::") != 0)) {
+    f_skeleton << "using " << string(ns, 0, ns.size() - 2) << endl << endl;
+  }
+
+  f_skeleton << "class " << svcname << "Handler" << endl;
+  indent_up();
+  f_skeleton << indent() << "def initialize" << endl
+             << "  # Your initialization goes here" << endl << indent() << "end" << endl << endl;
+
+  vector<t_function*> functions = tservice->get_functions();
+  vector<t_function*>::iterator f_iter;
+  for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
+    // generate_java_doc(f_skeleton, *f_iter);
+    f_skeleton << indent() << "def " << function_signature(*f_iter, "") << endl << indent()
+               << "  # Your implementation goes here" << endl << indent() << "  puts(\""
+               << (*f_iter)->get_name() << "\\n\");" << endl << indent() << "end" << endl << endl;
+  }
+
+  indent_down();
+  f_skeleton << "end" << endl << endl;
+
+  f_skeleton << indent() << "def some_skeleton_main" << endl;
+  indent_up();
+  f_skeleton
+      << indent() << "port = 9090" << endl << indent()
+      << "handler = " << svcname << "Handler.new" << endl << indent()
+      << "processor = " << svcname << "::Processor.new(handler)" << endl
+      << indent() << "serverTransport = ServerSocket.new(port)"
+      << endl << indent()
+      << "transportFactory = BufferedTransportFactory.new" << endl
+      << indent() << "protocolFactory = BinaryProtocolFactory.new"
+      << endl << endl << indent()
+      << "server = SimpleServer.new(processor, serverTransport, transportFactory, protocolFactory);"
+      << endl << indent() << "server.serve" << endl << indent() << "return 0" << endl;
+  indent_down();
+  f_skeleton << "end" << endl << endl;
+
+  // Close the files
+  f_skeleton.close();
+}
+
+void t_cr_generator::generate_struct_writer(t_cr_ofstream& out, t_struct* tstruct)
+{
+  string name = tstruct->get_name();
+  const vector<t_field*>& fields = tstruct->get_sorted_members();
+  vector<t_field*>::const_iterator f_iter;
+
+
+  out.indent() << "def write(oprot : Thrift::BaseProtocol)" << endl;
+  out.indent_up();
+  out.indent() << "oprot.write_struct_begin(" << capitalize(name) << ")" << endl;
+  std::for_each(std::begin(fields), std::end(fields), [&](auto field) {
+    out.indent() << "oprot.write_field_begin(\"" << field->get_name() << "\", "
+                 << type_to_enum(field->get_type()) << ", "
+                 << field->get_key() << ")" << endl;
+    generate_serialize_field(out, field);
+    out.indent() << "oprot.write_field_end" << endl;
+  });
+  out.indent() << "oprot.write_struct_end" << endl;
+  out.indent_down();
+  out.indent() << "end" << endl;
+  
+}
+
+void t_cr_generator::generate_serialize_field(t_cr_ofstream& out, t_field* tfield, std::string)
+{
+  t_type* type = get_true_type(tfield->get_type());
+
+  string name = tfield->get_name();
+
+  if (type->is_struct() || type->is_xception()) {
+    generate_serialize_struct(out, (t_struct*)type, name);
+  } else if (type->is_container()) {
+
+  } else if (type->is_base_type() || type->is_enum()) {
+    out.indent() << "oprot.";
+    if (type->is_base_type()) {
+      t_base_type::t_base tbase = ((t_base_type*)type)->get_base();
+      switch(tbase) {
+      case t_base_type::TYPE_STRING:
+        if (type->is_binary()) {
+          out << "write_binary(" << name << ");";
+        } else {
+          out << "write_string(" << name << ");";
+        }
+        break;
+      case t_base_type::TYPE_BOOL:
+        out << "write_bool(" << name << ");";
+        break;
+      case t_base_type::TYPE_I8:
+        out << "write_byte(" << name << ");";
+        break;
+      case t_base_type::TYPE_I16:
+        out << "write_i16(" << name << ");";
+        break;
+      case t_base_type::TYPE_I32:
+        out << "write_i32(" << name << ");";
+        break;
+      case t_base_type::TYPE_I64:
+        out << "write_i64(" << name << ");";
+        break;
+      case t_base_type::TYPE_DOUBLE:
+        out << "write_double(" << name << ");";
+        break;
+      default:
+        throw "compiler error: no Crystal writer for base type " + t_base_type::t_base_name(tbase)
+            + name;
+      }
+    } else if (type->is_enum()) {
+      out << "write_i32(" << name << ".to_i32)";
+    }
+    out << endl;
+  } else {
+    std::cout << "DO NOT KNOW HOW TO SERIALIZE FIELD " << name.c_str() << " TYPE " << type_name(type).c_str() << "\n";
+  }
+}
+
+void t_cr_generator::generate_serialize_struct(t_cr_ofstream& out, t_struct* tstruct, string prefix)
+{
+  out.indent() << prefix << ".write(oprot)" << endl;
 }
 
 THRIFT_REGISTER_GENERATOR(
