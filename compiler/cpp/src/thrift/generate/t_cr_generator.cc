@@ -124,6 +124,7 @@ public:
   void generate_cr_struct_declaration(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_field_data(t_cr_ofstream& out,
                            t_type* field_type,
+                           int key,
                            const std::string& field_name,
                            t_const_value* field_value,
                            bool optional,
@@ -191,6 +192,7 @@ public:
   std::string cr_autogen_comment();
   std::string render_require_thrift();
   std::string render_includes();
+  void render_property_type(t_cr_ofstream& out, t_type* field_type,int key);
   std::string declare_field(t_field* tfield);
   std::string type_name(const t_type* ttype);
   std::string full_type_name(const t_type* ttype);
@@ -340,7 +342,7 @@ void t_cr_generator::generate_enum(t_enum* tenum) {
   for (c_iter = constants.begin(); c_iter != constants.end(); ++c_iter) {
     int value = (*c_iter)->get_value();
 
-    string name = capitalize(underscore((*c_iter)->get_name()));
+    string name = capitalize(lowercase((*c_iter)->get_name()));
 
     generate_rdoc(f_types_, *c_iter);
     f_types_.indent() << name << " = " << value << endl;
@@ -400,7 +402,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
   } else if (type->is_enum()) {
     out.indent() << value->get_integer();
   } else if (type->is_struct() || type->is_xception()) {
-    out << full_type_name(type) << ".new({" << endl;
+    out << full_type_name(type) << ".new(" << endl;
     out.indent_up();
     const vector<t_field*>& fields = ((t_struct*)type)->get_members();
     vector<t_field*>::const_iterator f_iter;
@@ -421,7 +423,7 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
       render_const_value(out, field_type, v_iter->second) << "," << endl;
     }
     out.indent_down();
-    out.indent() << "})";
+    out.indent() << ")";
   } else if (type->is_map()) {
     t_type* ktype = ((t_map*)type)->get_key_type();
     t_type* vtype = ((t_map*)type)->get_val_type();
@@ -445,16 +447,21 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
     } else {
       etype = ((t_set*)type)->get_elem_type();
     }
-    render_crystal_type(out, type) << "{" << endl;
-    out.indent_up();
-    const vector<t_const_value*>& val = value->get_list();
-    vector<t_const_value*>::const_iterator v_iter;
-    for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
-      out.indent();
-      render_const_value(out, etype, *v_iter) << "," << endl;
+    render_crystal_type(out, type);
+    if (value->get_list().empty()) {
+      out << ".new";
+    } else {
+      out << "{" << endl;
+      out.indent_up();
+      const vector<t_const_value*>& val = value->get_list();
+      vector<t_const_value*>::const_iterator v_iter;
+      for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
+        out.indent();
+        render_const_value(out, etype, *v_iter) << "," << endl;
+      }
+      out.indent_down();
+      out.indent() << "}";
     }
-    out.indent_down();
-    out.indent() << "}";
   } else {
     throw "CANNOT GENERATE CONSTANT FOR TYPE: " + type->get_name();
   }
@@ -504,7 +511,7 @@ void t_cr_generator::generate_xception(t_struct* txception) {
 }
 
 /**
- * Generates a ruby struct
+ * Generates a crystal struct
  */
 void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
                                         t_struct* tstruct,
@@ -517,18 +524,19 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   }
   out << endl;
   out.indent_up();
+  out.indent() << "include ::Thrift::Struct" << endl << endl;
 
   if (is_exception) {
     generate_cr_simple_exception_constructor(out, tstruct);
   }
 
-  generate_field_constants(out, tstruct);
+  // generate_field_constants(out, tstruct);
   generate_field_defns(out, tstruct);
   generate_field_constructors(out, tstruct);
   generate_cr_struct_required_validator(out, tstruct);
   // if (is_helper) {
-    generate_struct_writer(out, tstruct);
-  // }
+    // generate_struct_writer(out, tstruct);
+ // }
 
   out.indent_down();
   out.indent() << "end" << endl << endl;
@@ -590,8 +598,10 @@ void t_cr_generator::generate_field_constructors(t_cr_ofstream& out, t_struct* t
     // out.indent() << "end" << endl;
   }
   out << ")" << endl;
-  out.indent() << "end" << endl;
-
+  out.indent() << "end" << endl << endl;
+  if (!first) {
+    out.indent() << "def initialize; end" << endl;
+  }
   // out.indent_down();
   // out.indent() << "end" << endl;
 
@@ -703,28 +713,32 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
   vector<t_field*>::const_iterator f_iter;
 
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
+    out.indent() << "@[Property(";
+    render_property_type(out, (*f_iter)->get_type(), (*f_iter)->get_key());
+    out << ")]" << endl;
     if (tstruct->is_union()) {
       out.indent() << "union_property ";
       generate_union_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name());
     } else {
       out.indent() << "property ";
-      generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name(), (*f_iter)->get_value(),
+      generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_key(), (*f_iter)->get_name(), (*f_iter)->get_value(),
                           (*f_iter)->get_req() == t_field::T_OPTIONAL, tstruct->is_union());
     }
     out << endl;
   }
+  out << endl;
 }
 
 void t_cr_generator::generate_field_data(t_cr_ofstream& out,
                                          t_type* field_type,
+                                         int key,
                                          const std::string& field_name = "",
                                          t_const_value* field_value = nullptr,
                                          bool optional = false,
                                          bool is_union = false) {
   // field_type = get_true_type(field_type);
-
   out << field_name << " : ";
-  render_crystal_type(out, get_true_type(field_type), optional);
+  render_crystal_type(out, get_true_type(field_type), true);
   if (field_value != nullptr) {
     out << " = ";
     render_const_value(out, field_type, field_value);
@@ -736,7 +750,7 @@ void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
                                                const std::string& field_name) {
 
   out << field_name << " : ";
-  render_crystal_type(out, get_true_type(field_type));
+  render_crystal_type(out, get_true_type(field_type), true);
 }
 
 void t_cr_generator::begin_namespace(t_cr_ofstream& out, vector<std::string> modules) {
@@ -982,8 +996,9 @@ void t_cr_generator::generate_service_server(t_service* tservice) {
   }
 
   // Generate the header portion
-  f_service_.indent() << "class Processor(T) < ::Thrift::Processor" << extends_processor << endl;
+  f_service_.indent() << "class Processor(T)" << endl;
   f_service_.indent_up();
+  f_service_.indent() << "include ::Thrift::Processor" << extends_processor << endl;
   f_service_.indent() << "@handler : T" << endl << endl;
 
   // f_service_.indent() << "include ::Thrift::Processor" << endl << endl;
@@ -1019,7 +1034,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
 
   // Declare result for non oneway function
   if (!tfunction->is_oneway()) {
-    f_service_.indent() << "result = " << resultname << ".new()" << endl;
+    f_service_.indent() << "result = " << resultname << ".new" << endl;
   }
 
   // Try block for a function with exceptions
@@ -1231,9 +1246,7 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
     t_field* field = (*f_iter);
 
     if (field->get_type()->is_enum()) {
-      out.indent() << "unless @" << field->get_name() << ".nil? || "
-                   << full_type_name(field->get_type()) << "::VALID_VALUES.include?(@"
-                   << field->get_name() << ")" << endl;
+      out.indent() << "unless @" << field->get_name() << ".nil?" << endl;
       out.indent_up();
       out.indent() << "raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::UNKNOWN, "
                       "\"Invalid value of field "
@@ -1434,6 +1447,20 @@ void t_cr_generator::generate_serialize_struct(t_cr_ofstream& out, t_struct* tst
 {
   out.indent() << prefix << ".write(oprot)" << endl;
 }
+
+void t_cr_generator::render_property_type(t_cr_ofstream& out, t_type* field_type,int key)
+{
+
+  out << "id: " << std::to_string(key);
+  t_type* type = get_true_type(field_type);
+  if (type->is_binary()) {
+    out << ", binary: true";
+  }
+}
+// void t_cr_generator::generate_struct_reader(t_cr_ofstream& out, t_struct* tstruct)
+// {
+  
+// }
 
 THRIFT_REGISTER_GENERATOR(
     cr,

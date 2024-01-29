@@ -8,6 +8,7 @@ crystal: 1.7.2
 
 license: MIT
 
-targets:
-  thrift:
-    main: lib/cr/src/thrift.cr
+dependencies:
+  cr:
+    path: lib/cr/src
+

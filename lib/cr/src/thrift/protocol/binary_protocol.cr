@@ -69,15 +69,12 @@ module Thrift
     end
 
     def write_i16(i16 : Int16)
-      puts i16
       raw = Bytes.new(2, 0)
       IO::ByteFormat::BigEndian.encode(i16, raw)
-      p! raw
       trans.write(raw)
     end
 
     def write_i32(i32 : Int32)
-      puts i32
       raw = Bytes.new(4, 0)
       IO::ByteFormat::BigEndian.encode(i32, raw)
       trans.write(raw)
@@ -172,6 +169,7 @@ module Thrift
     end
 
     def read_i16 : Int16
+      puts @rbuf
       trans.read_into_buffer(@rbuf, 2)
       val = IO::ByteFormat::BigEndian.decode(Int16, @rbuf)
     end
