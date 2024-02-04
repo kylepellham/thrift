@@ -1457,10 +1457,6 @@ void t_cr_generator::render_property_type(t_cr_ofstream& out, t_type* field_type
     out << ", binary: true";
   }
 }
-// void t_cr_generator::generate_struct_reader(t_cr_ofstream& out, t_struct* tstruct)
-// {
-  
-// }
 
 THRIFT_REGISTER_GENERATOR(
     cr,
