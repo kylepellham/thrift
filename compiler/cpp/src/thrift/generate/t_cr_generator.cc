@@ -428,18 +428,22 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
     t_type* ktype = ((t_map*)type)->get_key_type();
     t_type* vtype = ((t_map*)type)->get_val_type();
     render_crystal_type(out, type);
-
-    out << "{" << endl;
-    out.indent_up();
-    const map<t_const_value*, t_const_value*, t_const_value::value_compare>& val = value->get_map();
-    map<t_const_value*, t_const_value*, t_const_value::value_compare>::const_iterator v_iter;
-    for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
-      out.indent();
-      render_const_value(out, ktype, v_iter->first) << " => ";
-      render_const_value(out, vtype, v_iter->second) << "," << endl;
+    if (value->get_map().empty())
+    {
+      out << ".new";
+    } else {
+      out << "{" << endl;
+      out.indent_up();
+      const map<t_const_value*, t_const_value*, t_const_value::value_compare>& val = value->get_map();
+      map<t_const_value*, t_const_value*, t_const_value::value_compare>::const_iterator v_iter;
+      for (v_iter = val.begin(); v_iter != val.end(); ++v_iter) {
+        out.indent();
+        render_const_value(out, ktype, v_iter->first) << " => ";
+        render_const_value(out, vtype, v_iter->second) << "," << endl;
+      }
+      out.indent_down();
+      out.indent() << "}";
     }
-    out.indent_down();
-    out.indent() << "}";
   } else if (type->is_list() || type->is_set()) {
     t_type* etype;
     if (type->is_list()) {
@@ -560,11 +564,10 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
   generate_rdoc(out, tstruct);
   out.indent() << "class " << type_name(tstruct) << endl;
   out.indent_up();
-  out.indent() << "include ::Thrift::Union" << endl;
+  out.indent() << "include ::Thrift::Union" << endl << endl;
 
   // generate_field_constructors(out, tstruct);
 
-  generate_field_constants(out, tstruct);
   generate_field_defns(out, tstruct);
   generate_cr_union_validator(out, tstruct);
 
@@ -750,7 +753,7 @@ void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
                                                const std::string& field_name) {
 
   out << field_name << " : ";
-  render_crystal_type(out, get_true_type(field_type), true);
+  render_crystal_type(out, get_true_type(field_type));
 }
 
 void t_cr_generator::begin_namespace(t_cr_ofstream& out, vector<std::string> modules) {
@@ -1275,8 +1278,7 @@ void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* t
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
-  out.indent() << "raise(StandardError, \"Union fields are not set.\") if get_set_field.nil? || "
-                  "get_value.nil?"
+  out.indent() << "raise(StandardError, \"Union fields are not set.\") unless union_set?"
                << endl;
 
   // if field is an enum, check that its value is valid
@@ -1387,7 +1389,7 @@ void t_cr_generator::generate_struct_writer(t_cr_ofstream& out, t_struct* tstruc
   out.indent() << "oprot.write_struct_end" << endl;
   out.indent_down();
   out.indent() << "end" << endl;
-  
+
 }
 
 void t_cr_generator::generate_serialize_field(t_cr_ofstream& out, t_field* tfield, std::string)
