@@ -19,7 +19,7 @@
 
 cmake_minimum_required(VERSION 3.3)
 project("thrift-compiler" VERSION ${PACKAGE_VERSION})
-
+set(CMAKE_CXX_STANDARD 17)
 # version.h now handled via veralign.sh
 #configure_file(${CMAKE_CURRENT_SOURCE_DIR}/src/thrift/version.h.in ${CMAKE_CURRENT_BINARY_DIR}/thrift/version.h)
 
