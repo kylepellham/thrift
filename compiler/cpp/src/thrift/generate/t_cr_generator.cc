@@ -1515,7 +1515,7 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
     return field->get_req() == t_field::T_REQUIRED;
   });
 
-  out.indent() << "def write(oprot : ::Thrift::BaseProtocol)" << endl;
+  out.indent() << "def write(to oprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
     bool first = true;
@@ -1528,15 +1528,27 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
       out.indent_down();
       out.indent() << "end" << endl;
     }
-    out.indent() << "oprot.write_struct_begin(\"" << tstruct->get_name() << "\")" << endl << endl;
-    for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
-      out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
-      render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
-      out.indent() << "@" << (*f_iter)->get_name() << ".write(oprot)" << endl;
-      out.indent() << "oprot.write_field_end" << endl << endl;
+    out.indent() << "oprot.write_recursion do" << endl;
+    out.indent_up();
+    {
+      out.indent() << "oprot.write_struct_begin(\"" << tstruct->get_name() << "\")" << endl << endl;
+      for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
+        out.indent() << "@" << (*f_iter)->get_name() << ".try do |" << (*f_iter)->get_name() << "|" << endl;
+        out.indent_up();
+        {
+          out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
+          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
+          out.indent() << (*f_iter)->get_name() << ".write to: oprot" << endl;
+          out.indent() << "oprot.write_field_end" << endl;
+        }
+        out.indent_down();
+        out.indent() << "end" << endl << endl;
+      }
+      out.indent() << "oprot.write_field_stop" << endl;
+      out.indent() << "oprot.write_struct_end" << endl;
     }
-    out.indent() << "oprot.write_field_stop" << endl;
-    out.indent() << "oprot.write_struct_end" << endl;
+    out.indent_down();
+    out.indent() << "end" << endl;
   }
   out.indent_down();
   out.indent() << "end" << endl;
@@ -1545,54 +1557,48 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
 void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstruct)
 {
   const std::vector<t_field*>& fields = tstruct->get_members();
-  out.indent() << "def self.read(iprot : ::Thrift::BaseProtocol)" << endl;
+  out.indent() << "def self.read(from iprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
-    out.indent() << "ret = " << type_name(tstruct) << ".allocate" << endl;
-    out.indent() << "iprot.read_struct_begin" << endl;
-    out.indent() << "loop do" << endl;
+    out.indent() << "iprot.read_recursion do" << endl;
     out.indent_up();
     {
-      out.indent() << "name, type, fid = iprot.read_field_begin" << endl;
-      out.indent() << "next if type == ::Thrift::Types::Void" << endl;
-      out.indent() << "break if type == ::Thrift::Types::Stop" << endl;
-      out.indent() << "case fid" << endl;
-      for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
-        out.indent() << "when " << (*f_iter)->get_key() << endl;
-        out.indent_up();
-        {
-          out.indent() << "if type == ";
-          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type" << endl;
+      out.indent() << "ret = " << type_name(tstruct) << ".allocate" << endl;
+      out.indent() << "iprot.read_struct_begin" << endl;
+      out.indent() << "loop do" << endl;
+      out.indent_up();
+      {
+        out.indent() << "name, ftype, fid = iprot.read_field_begin" << endl;
+        out.indent() << "next if ftype == ::Thrift::Types::Void" << endl;
+        out.indent() << "break if ftype == ::Thrift::Types::Stop" << endl;
+        out.indent() << "case {fid, ftype}" << endl;
+        for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
+          out.indent() << "when {" << (*f_iter)->get_key() << ", ";
+          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type}" << endl;
           out.indent_up();
           {
             out.indent() << "ret." << (*f_iter)->get_name() << " = ";
-            render_crystal_type(out, (*f_iter)->get_type()) << ".read(iprot)" << endl;
+            render_crystal_type(out, (*f_iter)->get_type()) << ".read from: iprot" << endl;
           }
           out.indent_down();
-          out.indent() << "else" << endl;
-          out.indent_up();
-          {
-            out.indent() << "iprot.skip type" << endl;
-          }
-          out.indent_down();
-          out.indent() << "end" << endl;
+        }
+        out.indent() << "else" << endl;
+        out.indent_up();
+        {
+          out.indent() << "iprot.skip type" << endl;
         }
         out.indent_down();
-      }
-      out.indent() << "else" << endl;
-      out.indent_up();
-      {
-        out.indent() << "iprot.skip type" << endl;
+        out.indent() << "end" << endl;
+        out.indent() << "iprot.read_field_end" << endl;
       }
       out.indent_down();
       out.indent() << "end" << endl;
-      out.indent() << "iprot.read_field_end" << endl;
+      out.indent() << "iprot.read_struct_end" << endl;
+      out.indent() << "ret.validate" << endl;
+      out.indent() << "ret" << endl;
     }
     out.indent_down();
     out.indent() << "end" << endl;
-    out.indent() << "iprot.read_struct_end" << endl;
-    out.indent() << "ret.validate" << endl;
-    out.indent() << "ret" << endl;
   }
   out.indent_down();
   out.indent() << "end" << endl;
@@ -1627,25 +1633,33 @@ void t_cr_generator::generate_serialize_union(t_cr_ofstream& out, t_struct* tuni
   const std::vector<t_field*>& fields = tunion->get_members();
   std::vector<t_field*>::const_iterator f_iter;
 
-  out.indent() << "def write(oprot : ::Thrift::BaseProtocol)" << endl;
+  out.indent() << "def write(to oprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
-    out.indent() << "oprot.write_struct_begin(" << type_name(tunion) << ")" << endl;
-    out.indent() << "case @storage" << endl;
-    for(f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
-      out.indent() << "when .is_a?(";
-      render_crystal_type(out, (*f_iter)->get_type());
-      out << ")" << endl;
-      out.indent_up();
-      {
-        out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
-        render_crystal_type(out,(*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
+    out.indent() << "oprot.write_recursion do" << endl;
+    out.indent_up();
+    {
+      out.indent() << "oprot.write_struct_begin(" << type_name(tunion) << ")" << endl;
+      out.indent() << "case union_internal" << endl;
+      for(f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+        out.indent() << "when .is_a?(";
+        render_crystal_type(out, (*f_iter)->get_type());
+        out << ")" << endl;
+        out.indent_up();
+        {
+          out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
+          render_crystal_type(out,(*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
+          out.indent() << "@" << (*f_iter)->get_name() << ".write to: oprot" << endl;
+          out.indent() << "oprot.write_field_end" << endl;
+        }
+        out.indent_down();
       }
-      out.indent_down();
+      out.indent() << "end" << endl;
+      out.indent() << "oprot.write_field_stop" << endl;
+      out.indent() << "oprot.write_struct_end" << endl;
     }
+    out.indent_down();
     out.indent() << "end" << endl;
-    out.indent() << "oprot.write_field_stop" << endl;
-    out.indent() << "oprot.write_field_end" << endl;
   }
   out.indent_down();
   out.indent() << "end" << endl;
@@ -1656,55 +1670,49 @@ void t_cr_generator::generate_deserialize_union(t_cr_ofstream& out, t_struct* tu
   const std::vector<t_field*>& fields = tunion->get_members();
   std::vector<t_field*>::const_iterator f_iter;
 
-  out.indent() << "def read(iprot : ::Thrift::BaseProtocol)" << endl;
+  out.indent() << "def self.read(from iprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
-    out.indent() << "recieved_union = " << type_name(tunion) << ".allocate" << endl;
-    out.indent() << "iprot.read_struct_begin" << endl;
-    out.indent() << "loop do" << endl;
+    out.indent() << "iprot.read_recursion do" << endl;
     out.indent_up();
     {
-      out.indent() << "name, type, fid = iprot.read_field_begin" << endl;
-      out.indent() << "break if type == ::Thrift::Types::Stop" << endl;
-      out.indent() << "raise \"Too Many fields for Union\" if union_set?" << endl;
-      out.indent() << "case fid" << endl;
-      for (f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
-        out.indent() << "when " << (*f_iter)->get_key() << endl;
-        out.indent_up();
-        {
-          out.indent() << "if type == ";
-          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type" << endl;
-          out.indent_up();
-          {
-            out.indent() << "received_union." << (*f_iter)->get_name() << " = ";
-            render_crystal_type(out, (*f_iter)->get_type()) << ".read(iprot)" << endl;
-          }
-          out.indent_down();
-          out.indent() << "else" << endl;
-          out.indent_up();
-          {
-            out.indent() << "iprot.skip type" << endl;
-          }
-          out.indent_down();
-          out.indent() << "end" << endl;
-        }
-        out.indent_down();
-      }
-      out.indent() << "else" << endl;
+      out.indent() << "recieved_union = " << type_name(tunion) << ".allocate" << endl;
+      out.indent() << "iprot.read_struct_begin" << endl;
+      out.indent() << "loop do" << endl;
       out.indent_up();
       {
-        out.indent() << "iprot.skip type" << endl;
+        out.indent() << "name, ftype, fid = iprot.read_field_begin" << endl;
+        out.indent() << "break if ftype == ::Thrift::Types::Stop" << endl;
+        out.indent() << "raise \"Too Many fields for Union\" if union_set?" << endl;
+        out.indent() << "case {fid,ftype}" << endl;
+        for (f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+          out.indent() << "when {" << (*f_iter)->get_key() << ", ";
+          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type}" << endl;
+          out.indent_up();
+          {
+              out.indent() << "received_union." << (*f_iter)->get_name() << " = ";
+              render_crystal_type(out, (*f_iter)->get_type()) << ".read from: iprot" << endl;
+          }
+          out.indent_down();
+        }
+        out.indent() << "else" << endl;
+        out.indent_up();
+        {
+          out.indent() << "iprot.skip type" << endl;
+        }
+        out.indent_down();
+        out.indent() << "end" << endl;
+
+        out.indent() << "iprot.read_field_end" << endl;
       }
       out.indent_down();
       out.indent() << "end" << endl;
-
-      out.indent() << "iprot.read_field_end" << endl;
+      out.indent() << "iprot.read_struct_end" << endl;
+      out.indent() << "received_union.validate" << endl;
+      out.indent() << "received_union" << endl;
     }
     out.indent_down();
     out.indent() << "end" << endl;
-    out.indent() << "iprot.read_struct_end" << endl;
-    out.indent() << "received_union.validate" << endl;
-    out.indent() << "received_union" << endl;
   }
   out.indent_down();
   out.indent() << "end" << endl;
