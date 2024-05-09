@@ -667,34 +667,53 @@ void t_cr_generator::generate_field_constructors(t_cr_ofstream& out, t_struct* t
 
 void t_cr_generator::generate_cr_simple_exception_constructor(t_cr_ofstream& out,
                                                               t_struct* tstruct) {
-  const vector<t_field*>& members = tstruct->get_members();
-  vector<t_field*>::const_iterator m_iter;
+  // we take a copy because we need to sort these by requiredness
+  std::vector<t_field*> members = tstruct->get_members();
+  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(members), std::end(members), [](const t_field* ele) {
+    return ele->get_req() == t_field::T_REQUIRED;
+  });
+  std::vector<t_field*>::iterator default_value_iter = std::partition(required_iter, std::end(members), [](const t_field* ele) {
+    return ele->get_value() != nullptr;
+  });
+  std::vector<t_field*>::const_iterator m_iter;
   bool first = true;
   out.indent() << "def initialize(";
   // required fields come first in initialization order
-  for (m_iter = members.cbegin(); m_iter != members.cend(); ++m_iter) {
-    if ((*m_iter)->get_req() == t_field::T_REQUIRED) {
+  for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
+    if (first) {
+      first = false;
+    } else {
+      out << ", ";
+    }
+    out << "@" << (*m_iter)->get_name();
+  }
+  //non-required fields with defaults come after
+  for (m_iter = required_iter; m_iter != default_value_iter; ++m_iter) {
       if (first) {
         first = false;
       } else {
         out << ", ";
       }
       out << "@" << (*m_iter)->get_name();
-    }
   }
-  //non-required fields come after
-  for (m_iter = members.cbegin(); m_iter != members.cend(); ++m_iter) {
-    if ((*m_iter)->get_req() != t_field::T_REQUIRED) {
+
+  //non-required fields w/o defaults come after
+  for (m_iter = default_value_iter; m_iter != std::cend(members); ++m_iter) {
       if (first) {
         first = false;
       } else {
         out << ", ";
       }
       out << "@" << (*m_iter)->get_name() << " = nil";
+  }
+  out << ")" << endl;
+  out.indent_up();
+  {
+    for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
+      out.indent() << "@required_fields[\"" << (*m_iter)->get_name() << "\"] = :set" << endl;
     }
   }
-
-  out << ")" << endl;
+  out.indent_down();
   out.indent() << "end" << endl;
 }
 
@@ -1302,7 +1321,7 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
       out.indent() << "error_message = @required_fields.reduce(\"\") do |acc, field_and_set|" << endl;
       out.indent_up();
       {
-        out.indent() << "\"#{acc}#{\"#{field_and_set[0]},\" if field_and_set[1]}\"" << endl;
+        out.indent() << "\"#{acc}#{\"#{field_and_set[0]},\" if field_and_set[1] == :set}\"" << endl;
       }
       out.indent_down();
       out.indent() << "end" << endl;
@@ -1520,7 +1539,7 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
   {
     bool first = true;
     if (!required_fields.empty()) {
-      out.indent() << "if !(empty_fields = @required_fields.select{|k,v| v == false}).empty?" << endl;
+      out.indent() << "if !(empty_fields = @required_fields.select{|k,v| v == :unset}).empty?" << endl;
       out.indent_up();
       {
         out.indent() << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::UNKOWN, \"fields are unset: #{empty_fields.keys}\"" << endl;
@@ -1621,7 +1640,7 @@ t_cr_ofstream& t_cr_generator::generate_cr_struct_required_fields(t_cr_ofstream&
       } else {
         first = false;
       }
-      out << "\"" << (*f_iter)->get_name() << "\" => false";
+      out << "\"" << (*f_iter)->get_name() << "\" => :unset";
     }
     out << "}" << endl;
   }
