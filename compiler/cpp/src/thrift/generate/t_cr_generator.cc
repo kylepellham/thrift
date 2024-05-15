@@ -190,8 +190,8 @@ public:
 
   t_cr_ofstream& render_crystal_type(t_cr_ofstream& out,
                                      t_type* ttype,
-                                     bool optional = false,
-                                     bool is_union = false);
+                                     bool base = false,
+                                     bool optional = false);
   void generate_struct_writer(t_cr_ofstream& out, t_struct* tstruct);
   t_cr_ofstream& generate_cr_struct_required_fields(t_cr_ofstream& out, t_struct* tstruct);
   std::string cr_autogen_comment();
@@ -532,19 +532,14 @@ void t_cr_generator::generate_xception(t_struct* txception) {
   generate_field_defns(out, txception);
 
   out << endl;
-  generate_cr_simple_exception_constructor(out, txception);
+  generate_cr_struct_initializer(out, txception);
   out << endl;
   generate_cr_thrift_write(out, txception);
-  out << endl;
-  generate_cr_struct_required_validator(out, txception);
   out << endl;
   generate_cr_thrift_read(out, txception);
 
   out.indent_down();
   out.indent() << "end" << endl << endl;
-
-
-  // generate_cr_struct(f_types_, txception, true, false);
 }
 
 /**
@@ -567,47 +562,72 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   generate_field_defns(out, tstruct);
 
   out << endl;
-  generate_cr_simple_exception_constructor(out, tstruct);
+  generate_cr_struct_initializer(out, tstruct);
   out << endl;
   generate_cr_thrift_write(out, tstruct);
-  out << endl;
-  generate_cr_struct_required_validator(out, tstruct);
   out << endl;
   generate_cr_thrift_read(out, tstruct);
 
   out.indent_down();
   out.indent() << "end" << endl << endl;
-
-
-  // out.indent() << "class " << type_name(tstruct);
-  // if (is_exception) {
-  //   out << " < Exception";
-  // }
-  // out << endl;
-  // out.indent_up();
-  // out.indent() << "include ::Thrift::Struct" << endl << endl;
-
-  // if (is_exception) {
-  // }
-
-  // generate_field_defns(out, tstruct);
-  // generate_field_constructors(out, tstruct);
-  // generate_cr_struct_required_validator(out, tstruct);
-
-  // out.indent_down();
-  // out.indent() << "end" << endl << endl;
 }
 
-void generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
+void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
 {
-  const vector<t_field*>& fields = tstruct->get_members();
-  vector<t_field*>::const_iterator f_iter = fields.cbegin();
-  out.indent_up();
+    // we take a copy because we need to sort these by requiredness
+  std::vector<t_field*> members = tstruct->get_members();
+  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(members), std::end(members), [](const t_field* ele) {
+    return ele->get_req() == t_field::T_REQUIRED;
+  });
+  std::vector<t_field*>::iterator default_value_iter = std::partition(required_iter, std::end(members), [](const t_field* ele) {
+    return ele->get_value() != nullptr;
+  });
+  std::vector<t_field*>::const_iterator m_iter;
+  bool first = true;
   out.indent() << "def initialize(";
+  // required fields come first in initialization order
+  for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
+    if (first) {
+      first = false;
+    } else {
+      out << ", ";
+    }
+    out << "@" << (*m_iter)->get_name();
+  }
+  //non-required fields with defaults come after
+  for (m_iter = required_iter; m_iter != default_value_iter; ++m_iter) {
+    if (first) {
+      first = false;
+    } else {
+      out << ", ";
+    }
+    out << "@" << (*m_iter)->get_name() << " = ";
+    render_const_value(out, (*m_iter)->get_type(), (*m_iter)->get_value());
+  }
+
+  //non-required fields w/o defaults come after
+  for (m_iter = default_value_iter; m_iter != std::cend(members); ++m_iter) {
+      if (first) {
+        first = false;
+      } else {
+        out << ", ";
+      }
+      out << "@" << (*m_iter)->get_name() << " = nil";
+  }
+  out << ")" << endl;
+  out.indent_up();
+  {
+    for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
+      out.indent() << "@__required_fields__" << type_name(tstruct) << "_set[\"" << (*m_iter)->get_name() << "\"] = true" << endl;
+    }
+  }
+  out.indent_down();
+  out.indent() << "end" << endl;
+
 }
 
 /**
- * Generates a ruby union
+ * Generates a Crystal union
  */
 void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
                                        t_struct* tstruct,
@@ -665,76 +685,10 @@ void t_cr_generator::generate_field_constructors(t_cr_ofstream& out, t_struct* t
   out << endl;
 }
 
-void t_cr_generator::generate_cr_simple_exception_constructor(t_cr_ofstream& out,
-                                                              t_struct* tstruct) {
-  // we take a copy because we need to sort these by requiredness
-  std::vector<t_field*> members = tstruct->get_members();
-  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(members), std::end(members), [](const t_field* ele) {
-    return ele->get_req() == t_field::T_REQUIRED;
-  });
-  std::vector<t_field*>::iterator default_value_iter = std::partition(required_iter, std::end(members), [](const t_field* ele) {
-    return ele->get_value() != nullptr;
-  });
-  std::vector<t_field*>::const_iterator m_iter;
-  bool first = true;
-  out.indent() << "def initialize(";
-  // required fields come first in initialization order
-  for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
-    if (first) {
-      first = false;
-    } else {
-      out << ", ";
-    }
-    out << "@" << (*m_iter)->get_name();
-  }
-  //non-required fields with defaults come after
-  for (m_iter = required_iter; m_iter != default_value_iter; ++m_iter) {
-      if (first) {
-        first = false;
-      } else {
-        out << ", ";
-      }
-      out << "@" << (*m_iter)->get_name();
-  }
-
-  //non-required fields w/o defaults come after
-  for (m_iter = default_value_iter; m_iter != std::cend(members); ++m_iter) {
-      if (first) {
-        first = false;
-      } else {
-        out << ", ";
-      }
-      out << "@" << (*m_iter)->get_name() << " = nil";
-  }
-  out << ")" << endl;
-  out.indent_up();
-  {
-    for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
-      out.indent() << "@required_fields[\"" << (*m_iter)->get_name() << "\"] = :set" << endl;
-    }
-  }
-  out.indent_down();
-  out.indent() << "end" << endl;
-}
-
-void t_cr_generator::generate_field_constants(t_cr_ofstream& out, t_struct* tstruct) {
-  const vector<t_field*>& fields = tstruct->get_members();
-  vector<t_field*>::const_iterator f_iter;
-
-  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    std::string field_name = (*f_iter)->get_name();
-    std::string cap_field_name = upcase_string(field_name);
-
-    out.indent() << cap_field_name << " = " << (*f_iter)->get_key() << endl;
-  }
-  out << endl;
-}
-
 t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out,
                                                    t_type* ttype,
-                                                   bool optional,
-                                                   bool is_union) {
-
+                                                   bool base,
+                                                   bool optional) {
   ttype = get_true_type(ttype);
   if (ttype->is_base_type()) {
     t_base_type::t_base base = ((t_base_type*)ttype)->get_base();
@@ -778,24 +732,37 @@ t_cr_ofstream& t_cr_generator::render_crystal_type(t_cr_ofstream& out,
   } else if (ttype->is_xception() || ttype->is_struct()) {
     out << full_type_name(ttype);
   } else if (ttype->is_map()) {
-    out << "Hash(";
+    out << "Hash";
+    if (base) {
+      return out;
+    }
+    out << "(";
     render_crystal_type(out, ((t_map*)ttype)->get_key_type()) << ", ";
     render_crystal_type(out, ((t_map*)ttype)->get_val_type()) << ")";
   } else if (ttype->is_list() || ttype->is_set()) {
     t_type* ele_type;
     if (ttype->is_list()) {
       ele_type = ((t_list*)ttype)->get_elem_type();
-      out << "Array(";
+      out << "Array";
+      if (base) {
+        return out;
+      }
+      out << "(";
       render_crystal_type(out, ele_type) << ')';
     } else {
       ele_type = ((t_set*)ttype)->get_elem_type();
-      out << "Set(";
+      out << "Set";
+      if (base) {
+        return out;
+      }
+      out << "(";
       render_crystal_type(out, ele_type) << ')';
     }
   }
-  if (optional /*&& !is_union*/) {
+  if (optional) {
     out << "?";
   }
+
   return out;
 }
 
@@ -826,7 +793,7 @@ void t_cr_generator::generate_field_data(t_cr_ofstream& out,
                                          bool is_union = false) {
   // field_type = get_true_type(field_type);
   out << field_name << " : ";
-  render_crystal_type(out, get_true_type(field_type), req != t_field::T_REQUIRED);
+  render_crystal_type(out, get_true_type(field_type), false, req != t_field::T_REQUIRED);
   if (field_value != nullptr) {
     out << " = ";
     render_const_value(out, field_type, field_value);
@@ -1332,14 +1299,6 @@ void t_cr_generator::generate_cr_struct_required_validator(t_cr_ofstream& out, t
   out.indent() << "end" << endl;
 }
 
-void t_cr_generator::generate_deserialize_field(t_cr_ofstream& out,
-                                                t_field* tfield,
-                                                std::string prefix,
-                                                bool inclass)
-{
-
-}
-
 void t_cr_generator::generate_cr_union_validator(t_cr_ofstream& out, t_struct* tstruct) {
   out.indent() << "def validate" << endl;
   out.indent_up();
@@ -1394,13 +1353,6 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
              << "require \"thrift\"" << endl
              << "include Thrift" << endl;
 
-  // the following code would not compile:
-  // using namespace ;
-  // using namespace ::;
-  if ((!ns.empty()) && (ns.compare(" ::") != 0)) {
-    f_skeleton << "using " << string(ns, 0, ns.size() - 2) << endl << endl;
-  }
-
   f_skeleton << "class " << svcname << "Handler" << endl;
   indent_up();
   f_skeleton << indent() << "def initialize" << endl
@@ -1424,7 +1376,7 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
       << indent() << "port = 9090" << endl << indent()
       << "handler = " << svcname << "Handler.new" << endl << indent()
       << "processor = " << svcname << "::Processor.new(handler)" << endl
-      << indent() << "serverTransport = ServerSocket.new(port)"
+      << indent() << "serverTransport = ServerSocketTransport.new(port)"
       << endl << indent()
       << "transportFactory = BufferedTransportFactory.new" << endl
       << indent() << "protocolFactory = BinaryProtocolFactory.new"
@@ -1528,24 +1480,42 @@ void t_cr_generator::render_property_type(t_cr_ofstream& out, t_field::e_req req
 void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstruct)
 {
 
-  const std::vector<t_field*>& fields = tstruct->get_members();
-  std::vector<t_field*> required_fields;
-  std::copy_if(std::begin(fields), std::end(fields), std::back_inserter(required_fields), [](const t_field* field) {
+  std::vector<t_field*> fields = tstruct->get_members();
+  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* field) {
     return field->get_req() == t_field::T_REQUIRED;
+  });
+  std::vector<t_field*>::iterator opt_in_req_out_iter = std::partition(required_iter, std::end(fields), [](const t_field* ele) {
+    return ele->get_req() == t_field::T_OPT_IN_REQ_OUT;
   });
 
   out.indent() << "def write(to oprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
     bool first = true;
-    if (!required_fields.empty()) {
-      out.indent() << "if !(empty_fields = @required_fields.select{|k,v| v == :unset}).empty?" << endl;
+    if (required_iter != std::begin(fields)) {
+      out.indent() << "{% begin %}" << endl;
+      out.indent() << "if !(%empty_fields = @__required_fields__" << type_name(tstruct) << "_set";
+      if (opt_in_req_out_iter != required_iter) {
+        bool first_opt = true;
+        out << ".merge({";
+        for (std::vector<t_field*>::const_iterator f_iter = opt_in_req_out_iter; f_iter != std::cend(fields); ++f_iter) {
+          if (first_opt) {
+            first_opt = false;
+          } else {
+            out << ", ";
+          }
+          out << "\"" << (*f_iter)->get_name() << "\" => !@" << (*f_iter)->get_name() << ".nil?";
+        }
+        out << "})";
+      }
+      out << ".select{|k,v| !v}).empty?" << endl;
       out.indent_up();
       {
-        out.indent() << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::UNKOWN, \"fields are unset: #{empty_fields.keys}\"" << endl;
+        out.indent() << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::INVALID_DATA, \"Required write fields are unset: #{%empty_fields.keys}\"" << endl;
       }
       out.indent_down();
       out.indent() << "end" << endl;
+      out.indent() << "{% end %}" << endl;
     }
     out.indent() << "oprot.write_recursion do" << endl;
     out.indent_up();
@@ -1556,7 +1526,7 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
         out.indent_up();
         {
           out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
-          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
+          render_crystal_type(out, (*f_iter)->get_type(), true) << "::THRIFT_TYPE, " << (*f_iter)->get_key() << "_i16)" << endl;
           out.indent() << (*f_iter)->get_name() << ".write to: oprot" << endl;
           out.indent() << "oprot.write_field_end" << endl;
         }
@@ -1576,13 +1546,13 @@ void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstr
 void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstruct)
 {
   const std::vector<t_field*>& fields = tstruct->get_members();
-  out.indent() << "def self.read(from iprot : ::Thrift::BaseProtocol)" << endl;
+  bool required_fields = false;
+  out.indent() << "def read(from iprot : ::Thrift::BaseProtocol)" << endl;
   out.indent_up();
   {
     out.indent() << "iprot.read_recursion do" << endl;
     out.indent_up();
     {
-      out.indent() << "ret = " << type_name(tstruct) << ".allocate" << endl;
       out.indent() << "iprot.read_struct_begin" << endl;
       out.indent() << "loop do" << endl;
       out.indent_up();
@@ -1593,11 +1563,15 @@ void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstru
         out.indent() << "case {fid, ftype}" << endl;
         for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
           out.indent() << "when {" << (*f_iter)->get_key() << ", ";
-          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type}" << endl;
+          render_crystal_type(out, (*f_iter)->get_type(), true) << "::THRIFT_TYPE}" << endl;
           out.indent_up();
           {
-            out.indent() << "ret." << (*f_iter)->get_name() << " = ";
+            out.indent() << "@" << (*f_iter)->get_name() << " = ";
             render_crystal_type(out, (*f_iter)->get_type()) << ".read from: iprot" << endl;
+            if ((*f_iter)->get_req() == t_field::T_REQUIRED) {
+              required_fields = true;
+              out.indent() << "@__required_fields__" << type_name(tstruct) << "_set[\"" << (*f_iter)->get_name() << "\"] = true" << endl;
+            }
           }
           out.indent_down();
         }
@@ -1613,8 +1587,12 @@ void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstru
       out.indent_down();
       out.indent() << "end" << endl;
       out.indent() << "iprot.read_struct_end" << endl;
-      out.indent() << "ret.validate" << endl;
-      out.indent() << "ret" << endl;
+      if (required_fields) {
+        out.indent() << "{% begin %}" << endl;
+        out.indent() << "%empty_fields = @__required_fields__" << type_name(tstruct) << "_set.select{|k,v| !v}" << endl;
+        out.indent() << "raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::INVALID_DATA, \"Required fields are not set: #{%empty_fields.keys}\") unless %empty_fields.empty?" << endl;
+        out.indent() << "{% end %}" << endl;
+      }
     }
     out.indent_down();
     out.indent() << "end" << endl;
@@ -1625,22 +1603,22 @@ void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstru
 
 t_cr_ofstream& t_cr_generator::generate_cr_struct_required_fields(t_cr_ofstream& out, t_struct* tstruct)
 {
-  const std::vector<t_field*> fields = tstruct->get_members();
-  std::vector<t_field*> required_fields;
-  std::copy_if(std::begin(fields), std::end(fields), std::back_inserter(required_fields), [](const t_field* field) {
-    return field->get_req() == t_field::T_REQUIRED;
+  std::vector<t_field*> fields = tstruct->get_members();
+  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* ele) {
+    return ele->get_req() == t_field::T_REQUIRED;
   });
-  if (!required_fields.empty()) {
-    out.indent() << "@required_fields = ";
+
+  if (required_iter != std::begin(fields)) {
+    out.indent() << "@__required_fields__" << type_name(tstruct) << "_set = ";
     bool first = true;
     out << "{";
-    for (std::vector<t_field*>::const_iterator f_iter = required_fields.cbegin(); f_iter != required_fields.cend(); ++f_iter) {
+    for (std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != required_iter; ++f_iter) {
       if (!first) {
         out << ", ";
       } else {
         first = false;
       }
-      out << "\"" << (*f_iter)->get_name() << "\" => :unset";
+      out << "\"" << (*f_iter)->get_name() << "\" => false";
     }
     out << "}" << endl;
   }
@@ -1658,7 +1636,7 @@ void t_cr_generator::generate_serialize_union(t_cr_ofstream& out, t_struct* tuni
     out.indent() << "oprot.write_recursion do" << endl;
     out.indent_up();
     {
-      out.indent() << "oprot.write_struct_begin(" << type_name(tunion) << ")" << endl;
+      out.indent() << "oprot.write_struct_begin(\"" << type_name(tunion) << "\")" << endl;
       out.indent() << "case union_internal" << endl;
       for(f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
         out.indent() << "when .is_a?(";
@@ -1667,7 +1645,7 @@ void t_cr_generator::generate_serialize_union(t_cr_ofstream& out, t_struct* tuni
         out.indent_up();
         {
           out.indent() << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", ";
-          render_crystal_type(out,(*f_iter)->get_type()) << ".thrift_type, " << (*f_iter)->get_key() << "_i16)" << endl;
+          render_crystal_type(out,(*f_iter)->get_type()) << "::THRIFT_TYPE, " << (*f_iter)->get_key() << "_i16)" << endl;
           out.indent() << "@" << (*f_iter)->get_name() << ".write to: oprot" << endl;
           out.indent() << "oprot.write_field_end" << endl;
         }
@@ -1700,13 +1678,13 @@ void t_cr_generator::generate_deserialize_union(t_cr_ofstream& out, t_struct* tu
       out.indent() << "loop do" << endl;
       out.indent_up();
       {
-        out.indent() << "name, ftype, fid = iprot.read_field_begin" << endl;
+        out.indent() << "fname, ftype, fid = iprot.read_field_begin" << endl;
         out.indent() << "break if ftype == ::Thrift::Types::Stop" << endl;
         out.indent() << "raise \"Too Many fields for Union\" if union_set?" << endl;
         out.indent() << "case {fid,ftype}" << endl;
         for (f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
           out.indent() << "when {" << (*f_iter)->get_key() << ", ";
-          render_crystal_type(out, (*f_iter)->get_type()) << ".thrift_type}" << endl;
+          render_crystal_type(out, (*f_iter)->get_type(), true) << "::THRIFT_TYPE}" << endl;
           out.indent_up();
           {
               out.indent() << "received_union." << (*f_iter)->get_name() << " = ";
