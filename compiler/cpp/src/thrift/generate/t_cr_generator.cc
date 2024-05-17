@@ -316,9 +316,8 @@ string t_cr_generator::cr_autogen_comment() {
  */
 void t_cr_generator::close_generator() {
   // Close types file
-  std::string end_module = end_namespace(crystal_modules(program_));
-  f_types_ << end_module;
-  f_consts_ << end_module;
+  f_types_ << module_end_;
+  f_consts_ << module_end_;
   f_types_.close();
   f_consts_.close();
 }
@@ -493,8 +492,6 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
 void t_cr_generator::generate_struct(t_struct* tstruct) {
   if (tstruct->is_union()) {
     generate_cr_union(f_types_, tstruct, false);
-  } else if (tstruct->is_xception()) {
-    generate_xception(tstruct);
   } else {
     generate_cr_struct(f_types_, tstruct, false, false);
   }
@@ -699,6 +696,10 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype,
                                                    bool base,
                                                    bool optional) {
   std::string rendered_type = "";
+  if (ttype->is_typedef()) {
+    rendered_type += full_type_name(ttype);
+    return rendered_type;
+  }
   ttype = get_true_type(ttype);
   if (ttype->is_base_type()) {
     t_base_type::t_base base = ((t_base_type*)ttype)->get_base();
@@ -755,14 +756,14 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype,
       if (base) {
         return rendered_type;
       }
-      rendered_type += "(" + render_crystal_type(ele_type, base, optional) + ")";
+      rendered_type += "(" + render_crystal_type(ele_type) + ")";
     } else {
       ele_type = ((t_set*)ttype)->get_elem_type();
       rendered_type += "Set";
       if (base) {
         return rendered_type;
       }
-      rendered_type += "(" + render_crystal_type(ele_type, base, optional) + ")";
+      rendered_type += "(" + render_crystal_type(ele_type) + ")";
     }
   }
   if (optional) {
@@ -853,7 +854,6 @@ void t_cr_generator::generate_service(t_service* tservice) {
 
 
   f_service_ << module_begin_ << endl;
-  indent_up();
   indent(f_service_) << "module " << capitalize(tservice->get_name()) << endl;
   indent_up();
 
@@ -865,10 +865,8 @@ void t_cr_generator::generate_service(t_service* tservice) {
 
   indent_down();
   indent(f_service_) << "end" << endl;
-
-  std::string module_end = end_namespace(crystal_modules(tservice->get_program()));
-  indent_down();
-  f_service_ << module_end;
+  module_end_ = end_namespace(crystal_modules(program_));
+  f_service_ << module_end_;
 
   // Close service file
   f_service_.close();
@@ -1163,7 +1161,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
  */
 string t_cr_generator::function_signature(t_function* tfunction, string prefix) {
   // TODO(mcslee): Nitpicky, no ',' if argument_list is empty
-  return prefix + decapitalize(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ")";
+  return prefix + decapitalize(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ") : " + render_crystal_type(tfunction->get_returntype());
 }
 
 /**
@@ -1325,6 +1323,7 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
   string f_skeleton_name = get_out_dir() + lowercase(svcname) + "_server.skeleton.cr";
 
   string ns = ""; //namespace_prefix(tservice->get_program()->get_namespace("cr"));
+  std::string local_indent = "";
 
   ofstream_with_content_based_conditional_update f_skeleton;
   f_skeleton.open(f_skeleton_name.c_str());
@@ -1335,37 +1334,38 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
              << "include Thrift" << endl;
 
   f_skeleton << "class " << svcname << "Handler" << endl;
-  indent_up();
-  f_skeleton << indent() << "def initialize" << endl
-             << "  # Your initialization goes here" << endl << indent() << "end" << endl << endl;
+  local_indent += "  ";
+  f_skeleton << local_indent << "def initialize" << endl;
+  local_indent += "  ";
+  f_skeleton << local_indent << "# Your initialization goes here" << endl;
+  local_indent = std::string(std::begin(local_indent), std::end(local_indent) - 2);
+  f_skeleton << local_indent << "end" << endl << endl;
 
   vector<t_function*> functions = tservice->get_functions();
   vector<t_function*>::iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
-    // generate_java_doc(f_skeleton, *f_iter);
-    f_skeleton << indent() << "def " << function_signature(*f_iter, "") << endl << indent()
-               << "  # Your implementation goes here" << endl << indent() << " \""
-               << (*f_iter)->get_name() << "\"" << endl << indent() << "end" << endl << endl;
+    // generate_rdoc(f_skeleton, *f_iter);
+    f_skeleton << local_indent << "def " << function_signature(*f_iter, "") << endl;
+    local_indent += "  ";
+    f_skeleton << local_indent << "# Your implementation goes here" << endl << local_indent
+               << "raise NotImplementedError.new \"" << (*f_iter)->get_name() << "\"" << endl;
+    local_indent = std::string(std::begin(local_indent), std::end(local_indent) - 2);
+    f_skeleton << local_indent << "end" << endl << endl;
   }
 
-  indent_down();
-  f_skeleton << "end" << endl << endl;
+  local_indent = std::string(std::begin(local_indent), std::end(local_indent) - 2);
+  f_skeleton << local_indent << "end" << endl << endl;
 
-  f_skeleton << indent() << "def some_skeleton_main" << endl;
-  indent_up();
   f_skeleton
-      << indent() << "port = 9090" << endl << indent()
-      << "handler = " << svcname << "Handler.new" << endl << indent()
+      << "port = 9090" << endl
+      << "handler = " << svcname << "Handler.new" << endl
       << "processor = " << svcname << "::Processor.new(handler)" << endl
-      << indent() << "serverTransport = ServerSocketTransport.new(port)"
-      << endl << indent()
+      << "serverTransport = ServerSocketTransport.new(port)" << endl
       << "transportFactory = BufferedTransportFactory.new" << endl
-      << indent() << "protocolFactory = BinaryProtocolFactory.new"
-      << endl << endl << indent()
-      << "server = SimpleServer.new(processor, serverTransport, transportFactory, protocolFactory);"
-      << endl << indent() << "server.serve" << endl << indent() << "return 0" << endl;
-  indent_down();
-  f_skeleton << "end" << endl << endl;
+      << "protocolFactory = BinaryProtocolFactory.new"
+      << endl << endl
+      << "server = SimpleServer.new(processor, serverTransport, transportFactory, protocolFactory)" << endl
+      << "server.serve" << endl << "return 0";
 
   // Close the files
   f_skeleton.close();
