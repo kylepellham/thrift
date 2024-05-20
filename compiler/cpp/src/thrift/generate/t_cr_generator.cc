@@ -90,7 +90,7 @@ public:
 
   void init_generator() override;
   void close_generator() override;
-  std::string display_name() const;
+  std::string display_name() const override;
 
   void generate_typedef(t_typedef*) override;
   void generate_enum(t_enum* tenum) override;
@@ -107,7 +107,6 @@ public:
    * Struct generation code
    */
 
-  void generate_cr(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_cr_struct(t_cr_ofstream& out, t_struct* tstruct, bool is_exception, bool is_helper);
   void generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_union(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
@@ -115,20 +114,17 @@ public:
   void generate_cr_function_helpers(t_function* tfunction);
   void generate_cr_simple_constructor(t_cr_ofstream& out, t_struct* tstruct);
   void generate_cr_simple_exception_constructor(t_cr_ofstream& out, t_struct* tstruct);
-  void generate_cr_struct_decleration();
   void generate_serialize_struct(t_cr_ofstream& out, t_struct* tstruct, string prefix);
   void generate_serialize_union(t_cr_ofstream& out, t_struct* tunion);
   void generate_deserialize_union(t_cr_ofstream& out, t_struct* tunion);
-  void generate_field_constants(t_cr_ofstream& out, t_struct* tstruct);
-  void generate_field_constructors(t_cr_ofstream& out, t_struct* tstruct);
   void generate_field_defns(t_cr_ofstream& out, t_struct* tstruct);
-  void generate_cr_struct_declaration(t_cr_ofstream& out, t_struct* tstruct, bool is_exception);
   void generate_field_data(t_cr_ofstream& out,
                            t_type* field_type,
+                           t_const_value* value,
                            const std::string& field_name,
                            t_field::e_req req);
-  void generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstruct);
-  void generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstruct);
+  void generate_cr_struct_serialize(t_cr_ofstream& out, t_struct* tstruct);
+  void generate_cr_struct_deserialize(t_cr_ofstream& out, t_struct* tstruct);
   void generate_union_field_data(t_cr_ofstream& out,
                                  t_type* field_type,
                                  const std::string& field_name);
@@ -150,32 +146,10 @@ public:
 
   void generate_deserialize_field(t_cr_ofstream& out,
                                   t_field* tfield,
-                                  std::string class_name);
-
-  void generate_deserialize_struct(t_cr_ofstream& out, t_struct* tstruct, std::string prefix = "");
-
-  void generate_deserialize_container(t_cr_ofstream& out, t_type* ttype, std::string prefix = "");
-
-  void generate_deserialize_set_element(t_cr_ofstream& out, t_set* tset, std::string prefix = "");
-
-  void generate_deserialize_map_element(t_cr_ofstream& out, t_map* tmap, std::string prefix = "");
-
-  void generate_deserialize_list_element(t_cr_ofstream& out,
-                                         t_list* tlist,
-                                         std::string prefix = "");
+                                  std::string class_name,
+                                  const std::string& isset_check = "");
 
   void generate_serialize_field(t_cr_ofstream& out, t_field* tfield);
-
-  void generate_serialize_container(t_cr_ofstream& out, t_type* ttype, std::string prefix = "");
-
-  void generate_serialize_map_element(t_cr_ofstream& out,
-                                      t_map* tmap,
-                                      std::string kiter,
-                                      std::string viter);
-
-  void generate_serialize_set_element(t_cr_ofstream& out, t_set* tmap, std::string iter);
-
-  void generate_serialize_list_element(t_cr_ofstream& out, t_list* tlist, std::string iter);
 
   void generate_rdoc(t_cr_ofstream& out, t_doc* tdoc);
 
@@ -186,13 +160,12 @@ public:
   std::string render_crystal_type(t_type* ttype,
                                      bool base = false,
                                      bool optional = false);
-  void generate_struct_writer(t_cr_ofstream& out, t_struct* tstruct);
+  std::string cr_underscore(std::string in);
   std::string generate_cr_struct_required_fields(t_struct* tstruct);
   std::string cr_autogen_comment();
   std::string render_require_thrift();
   std::string render_includes();
   void render_property_type(t_cr_ofstream& out, t_field::e_req req, int key);
-  std::string declare_field(t_field* tfield);
   std::string type_name(const t_type* ttype);
   std::string full_type_name(const t_type* ttype);
   std::string function_signature(t_function* tfunction, std::string prefix = "");
@@ -505,17 +478,6 @@ void t_cr_generator::generate_struct(t_struct* tstruct) {
  * Crystal in cases where thrift structs rely on recursive definitions.
  */
 void t_cr_generator::generate_forward_declaration(t_struct* tstruct) {
-  generate_cr_struct_declaration(f_types_, tstruct, tstruct->is_xception());
-}
-
-void t_cr_generator::generate_cr_struct_declaration(t_cr_ofstream& out,
-                                                    t_struct* tstruct,
-                                                    bool is_exception) {
-  indent(out) << "class " << type_name(tstruct);
-  if (is_exception) {
-    out << " < ::Thrift::Exception";
-  }
-  out << "; end" << endl << endl;
 }
 
 /**
@@ -541,9 +503,9 @@ void t_cr_generator::generate_xception(t_struct* txception) {
   out << endl;
   generate_cr_struct_initializer(out, txception);
   out << endl;
-  generate_cr_thrift_write(out, txception);
+  generate_cr_struct_serialize(out, txception);
   out << endl;
-  generate_cr_thrift_read(out, txception);
+  generate_cr_struct_deserialize(out, txception);
 
   indent_down();
   indent(out) << "end" << endl << endl;
@@ -571,9 +533,9 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   out << endl;
   generate_cr_struct_initializer(out, tstruct);
   out << endl;
-  generate_cr_thrift_write(out, tstruct);
+  generate_cr_struct_serialize(out, tstruct);
   out << endl;
-  generate_cr_thrift_read(out, tstruct);
+  generate_cr_struct_deserialize(out, tstruct);
 
   indent_down();
   indent(out) << "end" << endl << endl;
@@ -583,17 +545,14 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
 {
     // we take a copy because we need to sort these by requiredness
   std::vector<t_field*> members = tstruct->get_members();
-  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(members), std::end(members), [](const t_field* ele) {
-    return ele->get_req() == t_field::T_REQUIRED;
-  });
-  std::vector<t_field*>::iterator default_value_iter = std::partition(required_iter, std::end(members), [](const t_field* ele) {
-    return ele->get_value() != nullptr;
+  std::vector<t_field*>::iterator required_wo_default_iter = std::partition(std::begin(members), std::end(members), [](const t_field* tfield) {
+    return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;
   });
   std::vector<t_field*>::const_iterator m_iter;
   bool first = true;
   indent(out) << "def initialize(";
   // required fields come first in initialization order
-  for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
+  for (m_iter = std::cbegin(members); m_iter != required_wo_default_iter; ++m_iter) {
     if (first) {
       first = false;
     } else {
@@ -601,36 +560,34 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
     }
     out << "@" << (*m_iter)->get_name();
   }
+
   //non-required fields with defaults come after
-  for (m_iter = required_iter; m_iter != default_value_iter; ++m_iter) {
+  for (m_iter = required_wo_default_iter; m_iter != std::cend(members); ++m_iter) {
     if (first) {
       first = false;
     } else {
       out << ", ";
     }
-    out << "@" << (*m_iter)->get_name() << " = ";
-    render_const_value(out, (*m_iter)->get_type(), (*m_iter)->get_value());
-  }
-
-  //non-required fields w/o defaults come after
-  for (m_iter = default_value_iter; m_iter != std::cend(members); ++m_iter) {
-      if (first) {
-        first = false;
-      } else {
-        out << ", ";
-      }
-      out << "@" << (*m_iter)->get_name() << " = nil";
+    out << cr_underscore((*m_iter)->get_name()) << " = nil";
   }
   out << ")" << endl;
   indent_up();
-  {
-    for (m_iter = members.cbegin(); m_iter != required_iter; ++m_iter) {
-      indent(out) << "@__required_fields__" << type_name(tstruct) << "_set[\"" << (*m_iter)->get_name() << "\"] = true" << endl;
+
+  for (m_iter = required_wo_default_iter; m_iter != std::cend(members); ++m_iter) {
+    // basically we can lump in required with default values and optionals
+    indent(out) << cr_underscore((*m_iter)->get_name()) << ".try do |" << cr_underscore((*m_iter)->get_name()) << "|" << endl;
+    indent_up();
+    indent(out) << "@" << cr_underscore((*m_iter)->get_name()) << " = " << cr_underscore((*m_iter)->get_name()) << endl;
+    // don't generate isset for required fields
+    if ((*m_iter)->get_req() != t_field::T_REQUIRED) {
+      indent(out) << "@__isset." << cr_underscore((*m_iter)->get_name()) << " = true" << endl;
     }
+    indent_down();
+    indent(out) << "end" << endl << endl;
   }
   indent_down();
-  indent(out) << "end" << endl;
 
+  indent(out) << "end" << endl;
 }
 
 /**
@@ -654,42 +611,6 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
 
   indent_down();
   indent(out) << "end" << endl << endl;
-}
-
-void t_cr_generator::generate_field_constructors(t_cr_ofstream& out, t_struct* tstruct) {
-
-  // indent(out) << "class << self" << endl;
-  // indent_up();
-
-  const vector<t_field*>& fields = tstruct->get_members();
-  vector<t_field*>::const_iterator f_iter;
-
-
-  indent(out) << "def initialize(";
-  bool first = true;
-  for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    // if (f_iter != fields.begin()) {
-    //   out << endl;
-    // }
-    std::string field_name = "@" + (*f_iter)->get_name();
-    if (first) {
-      first = false;
-    } else {
-      out << ", ";
-    }
-    out << field_name;
-    // indent(out) << "  " << tstruct->get_name() << ".new(:" << field_name << ", val)" << endl;
-    // indent(out) << "end" << endl;
-  }
-  out << ")" << endl;
-  indent(out) << "end" << endl << endl;
-  if (!first) {
-    indent(out) << "def initialize; end" << endl;
-  }
-  // indent_down();
-  // indent(out) << "end" << endl;
-
-  out << endl;
 }
 
 std::string t_cr_generator::render_crystal_type(t_type* ttype,
@@ -781,10 +702,10 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
     generate_rdoc(out, tstruct);
     if (tstruct->is_union()) {
       indent(out) << "union_property ";
-      generate_union_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name());
+      generate_union_field_data(out, (*f_iter)->get_type(), cr_underscore((*f_iter)->get_name()));
     } else {
       indent(out) << "struct_property ";
-      generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_name(),
+      generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_value(), cr_underscore((*f_iter)->get_name()),
                           (*f_iter)->get_req());
     }
     out << endl;
@@ -793,17 +714,20 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
 }
 
 void t_cr_generator::generate_field_data(t_cr_ofstream& out,
-                                         t_type* field_type,
+                                         t_type*  field_type,
+                                         t_const_value* value,
                                          const std::string& field_name = "",
                                          t_field::e_req req = t_field::T_OPTIONAL) {
-  // field_type = get_true_type(field_type);
   out << field_name << " : " << render_crystal_type(get_true_type(field_type), false, req != t_field::T_REQUIRED);
+  if (value) {
+    out << " = ";
+    render_const_value(out, field_type, value);
+  }
 }
 
 void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
                                                t_type* field_type,
                                                const std::string& field_name) {
-
   out << field_name << " : " << render_crystal_type(get_true_type(field_type));
 }
 
@@ -934,9 +858,10 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
   vector<t_function*>::const_iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     t_struct* arg_struct = (*f_iter)->get_arglist();
-    const vector<t_field*>& fields = arg_struct->get_members();
-    vector<t_field*>::const_iterator fld_iter;
-    string funname = (*f_iter)->get_name();
+    const std::vector<t_field*>& fields = arg_struct->get_members();
+    std::vector<t_field*>::const_iterator fld_iter;
+    std::string funname = cr_underscore((*f_iter)->get_name());
+    std::string outgoing_name = (*f_iter)->get_name();
 
     // Open function
     indent(f_service_) << "def " << function_signature(*f_iter) << endl;
@@ -950,7 +875,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       } else {
         f_service_ << ", ";
       }
-      f_service_ << (*fld_iter)->get_name();
+      f_service_ << cr_underscore((*fld_iter)->get_name());
     }
     f_service_ << ")" << endl;
 
@@ -971,10 +896,10 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
     std::string argsname = capitalize((*f_iter)->get_name() + "_args");
     std::string messageSendProc = (*f_iter)->is_oneway() ? "send_oneway_message" : "send_message";
 
-    indent(f_service_) << messageSendProc << "(\"" << funname << "\", " << argsname;
+    indent(f_service_) << messageSendProc << "(\"" << outgoing_name << "\", " << argsname;
 
     for (fld_iter = fields.begin(); fld_iter != fields.end(); ++fld_iter) {
-      f_service_ << ", " << (*fld_iter)->get_name() << ": " << (*fld_iter)->get_name();
+      f_service_ << ", " << cr_underscore((*fld_iter)->get_name()) << ": " << cr_underscore((*fld_iter)->get_name());
     }
 
     f_service_ << ")" << endl;
@@ -986,7 +911,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       std::string resultname = capitalize((*f_iter)->get_name() + "_result");
       t_struct noargs(program_);
 
-      t_function recv_function((*f_iter)->get_returntype(), string("recv_") + (*f_iter)->get_name(),
+      t_function recv_function((*f_iter)->get_returntype(), string("recv_") + cr_underscore((*f_iter)->get_name()),
                                &noargs);
       // Open function
       f_service_ << endl;
@@ -1001,20 +926,6 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       indent(f_service_) << "end" << endl;
 
       indent(f_service_) << "result = receive_message(" << resultname << ")" << endl;
-
-      // Careful, only return _result if not a void function
-      if (!(*f_iter)->get_returntype()->is_void()) {
-        indent(f_service_) << "return result.success unless result.success.nil?" << endl;
-      }
-
-      t_struct* xs = (*f_iter)->get_xceptions();
-      const std::vector<t_field*>& xceptions = xs->get_members();
-      vector<t_field*>::const_iterator x_iter;
-      for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
-        indent(f_service_) << "raise result." << (*x_iter)->get_name() << " unless result."
-                            << (*x_iter)->get_name() << ".nil?" << endl;
-      }
-
       // Careful, only return _result if not a void function
       if ((*f_iter)->get_returntype()->is_void()) {
         indent(f_service_) << "return" << endl;
@@ -1023,6 +934,19 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
                                "::Thrift::ApplicationException.new(::Thrift::ApplicationException::"
                                "MISSING_RESULT, \""
                             << (*f_iter)->get_name() << " failed: unknown result\")" << endl;
+      }
+
+      t_struct* xs = (*f_iter)->get_xceptions();
+      const std::vector<t_field*>& xceptions = xs->get_members();
+      vector<t_field*>::const_iterator x_iter;
+      for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
+        indent(f_service_) << "raise result." << (*x_iter)->get_name() << " unless result."
+                            << cr_underscore((*x_iter)->get_name()) << ".nil?" << endl;
+      }
+
+      // Careful, only return _result if not a void function
+      if (!(*f_iter)->get_returntype()->is_void()) {
+        indent(f_service_) << "return result.success unless result.success.nil?" << endl;
       }
 
       // Close function
@@ -1154,14 +1078,51 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
 }
 
 /**
+ * @brief underscore method to match crystal
+ *        underscore ex: IAMUPCASE -> iamupcase
+ *                       IAMlowercase -> iam_lowercase
+ *
+ * @param in
+ * @return std::string
+ */
+std::string t_cr_generator::cr_underscore(std::string in)
+{
+  bool recently_inserted = false;
+  in[0] = tolower(in[0]);
+  size_t i = 1;
+  for(; i < in.size(); ++i)
+  {
+    if (isupper(in[i])) {
+      in[i] = tolower(in[i]);
+      if(i < in.size() - 1 && islower(in[i + 1]) && !recently_inserted) {
+        if (!(isalpha(in[i - 1]) || isdigit(in[i - 1]))) {
+          continue;
+        }
+        recently_inserted = true;
+        in.insert(i++, "_");
+      } else {
+        recently_inserted = false;
+      }
+    } else if (islower(in[i])) {
+      if (i < in.size() - 1 && isupper(in[i + 1]) && !recently_inserted) {
+        recently_inserted = true;
+        in.insert(++i, "_");
+      } else {
+        recently_inserted = false;
+      }
+    }
+  }
+  return in;
+}
+
+/**
  * Renders a function signature of the form 'type name(args)'
  *
  * @param tfunction Function definition
  * @return String of rendered function definition
  */
 string t_cr_generator::function_signature(t_function* tfunction, string prefix) {
-  // TODO(mcslee): Nitpicky, no ',' if argument_list is empty
-  return prefix + decapitalize(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ") : " + render_crystal_type(tfunction->get_returntype());
+  return prefix + cr_underscore(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ")";
 }
 
 /**
@@ -1186,7 +1147,7 @@ string t_cr_generator::argument_list(t_struct* tstruct) {
     } else {
       result += ", ";
     }
-    result += (*f_iter)->get_name();
+    result += cr_underscore((*f_iter)->get_name());
   }
   return result;
 }
@@ -1341,14 +1302,14 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
   local_indent = std::string(std::begin(local_indent), std::end(local_indent) - 2);
   f_skeleton << local_indent << "end" << endl << endl;
 
-  vector<t_function*> functions = tservice->get_functions();
-  vector<t_function*>::iterator f_iter;
+  std::vector<t_function*> functions = tservice->get_functions();
+  std::vector<t_function*>::iterator f_iter;
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     // generate_rdoc(f_skeleton, *f_iter);
     f_skeleton << local_indent << "def " << function_signature(*f_iter, "") << endl;
     local_indent += "  ";
     f_skeleton << local_indent << "# Your implementation goes here" << endl << local_indent
-               << "raise NotImplementedError.new \"" << (*f_iter)->get_name() << "\"" << endl;
+               << "raise ::Thrift::ApplicationError.new message: \"" << (*f_iter)->get_name() << "\"" << endl;
     local_indent = std::string(std::begin(local_indent), std::end(local_indent) - 2);
     f_skeleton << local_indent << "end" << endl << endl;
   }
@@ -1373,17 +1334,11 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
 
 void t_cr_generator::generate_serialize_field(t_cr_ofstream& out, t_field* tfield)
 {
-  const std::string name = tfield->get_name();
+  const std::string name = cr_underscore(tfield->get_name());
 
-  indent(out) << "@" << name << ".try do |" << name << "|" << endl;
-  indent_up();
-  {
-    indent(out) << "oprot.write_field_begin(\"" << name << "\")" << endl
-                << indent() << name << ".write to: oprot" << endl
-                << indent() << "oprot.write_field_end" << endl;
-  }
-  indent_down();
-  indent(out) << "end" << endl;
+  indent(out) << "oprot.write_field_begin(\"" << tfield->get_name() << "\", @" << name << ".thrift_type, " << tfield->get_key() << "_i16)" << endl
+              << indent() << "@" << name << ".write to: oprot" << endl
+              << indent() << "oprot.write_field_end" << endl;
 }
 
 void t_cr_generator::generate_serialize_struct(t_cr_ofstream& out, t_struct* tstruct, string prefix)
@@ -1397,105 +1352,152 @@ void t_cr_generator::render_property_type(t_cr_ofstream& out, t_field::e_req req
   out << "id: " << std::to_string(key) << ", req_in: " << std::boolalpha << (req == t_field::T_REQUIRED) << ", req_out: " << (req == t_field::T_OPT_IN_REQ_OUT || req == t_field::T_REQUIRED);
 }
 
-void t_cr_generator::generate_cr_thrift_write(t_cr_ofstream& out, t_struct* tstruct)
+void t_cr_generator::generate_cr_struct_serialize(t_cr_ofstream& out, t_struct* tstruct)
 {
 
   std::vector<t_field*> fields = tstruct->get_members();
-  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* field) {
-    return field->get_req() == t_field::T_REQUIRED;
-  });
-  std::vector<t_field*>::iterator opt_in_req_out_iter = std::partition(required_iter, std::end(fields), [](const t_field* ele) {
-    return ele->get_req() == t_field::T_OPT_IN_REQ_OUT;
-  });
 
+  // begin serialize definition
   indent(out) << "def write(to oprot : ::Thrift::BaseProtocol)" << endl;
   indent_up();
-  {
+
+  std::vector<t_field*>::const_iterator non_optional_wo_default_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* tfield) {
+    return (tfield->get_req() == t_field::T_OPT_IN_REQ_OUT && tfield->get_value() == nullptr);
+  });
+
+  // required fields are always set when writing but opt_in_req_out could be unset but must be written
+  if (non_optional_wo_default_iter != std::begin(fields)) {
+
+    std::string tmp_empty_fields = tmp("__empty_fields");
+    indent(out) << "if !(" << tmp_empty_fields << " = {";
     bool first = true;
-    if (required_iter != std::begin(fields)) {
-      indent(out) << "{% begin %}" << endl;
-      indent(out) << "if !(%empty_fields = @__required_fields__" << type_name(tstruct) << "_set";
-      if (opt_in_req_out_iter != required_iter) {
-        bool first_opt = true;
-        out << ".merge({";
-        for (std::vector<t_field*>::const_iterator f_iter = opt_in_req_out_iter; f_iter != std::cend(fields); ++f_iter) {
-          if (first_opt) {
-            first_opt = false;
-          } else {
-            out << ", ";
-          }
-          out << "\"" << (*f_iter)->get_name() << "\" => !@" << (*f_iter)->get_name() << ".nil?";
-        }
-        out << "})";
+    for(std::vector<t_field*>::const_iterator f_iter = std::begin(fields); f_iter != non_optional_wo_default_iter; ++f_iter) {
+      std::string safe_cr_name = cr_underscore((*f_iter)->get_name());
+      if (first) {
+        first = false;
+      } else {
+        out << ", ";
       }
-      out << ".select{|k,v| !v}).empty?" << endl;
-      indent_up();
-      {
-        indent(out) << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::INVALID_DATA, \"Required write fields are unset: #{%empty_fields.keys}\"" << endl;
-      }
-      indent_down();
-      indent(out) << "end" << endl;
-      indent(out) << "{% end %}" << endl;
+      out << "\"" << (*f_iter)->get_name() << "\" => !" << safe_cr_name << ".nil?";
     }
-    indent(out) << "oprot.write_recursion do" << endl;
+    out << "}.select{|k,v| !v}).empty?" << endl;
     indent_up();
-    {
-      indent(out) << "oprot.write_struct_begin(self.class.name)" << endl << endl;
-      for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
-        generate_serialize_field(out, (*f_iter));
-      }
-      indent(out) << "oprot.write_field_stop" << endl;
-      indent(out) << "oprot.write_struct_end" << endl;
-    }
+    indent(out) << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::MISSING_DATA, \"Required field(s) missing for write #{" << tmp_empty_fields << ".keys}\"" << endl;
     indent_down();
     indent(out) << "end" << endl;
   }
+
+  //begin recursion tracking
+  indent(out) << "oprot.write_recursion do" << endl;
+  indent_up();
+
+  // begin writing fields
+  indent(out) << "oprot.write_struct_begin(self.class.name)" << endl << endl;
+  for(std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+    // optional fields need to be set to write
+    if ((*f_iter)->get_req() != t_field::T_OPTIONAL) {
+      generate_serialize_field(out, (*f_iter));
+    } else {
+      indent(out) << "if @__isset." << cr_underscore((*f_iter)->get_name()) << endl;
+      indent_up();
+      generate_serialize_field(out, (*f_iter));
+      indent_down();
+      indent(out) << "end" << endl << endl;
+    }
+  }
+  //end writing fields
+  indent(out) << "oprot.write_field_stop" << endl;
+  indent(out) << "oprot.write_struct_end" << endl;
+
+  // end recursion tracking
+  indent_down();
+  indent(out) << "end" << endl;
+
+  // end serialize function
   indent_down();
   indent(out) << "end" << endl;
 }
 
-void t_cr_generator::generate_cr_thrift_read(t_cr_ofstream& out, t_struct* tstruct)
+void t_cr_generator::generate_cr_struct_deserialize(t_cr_ofstream& out, t_struct* tstruct)
 {
   const std::vector<t_field*>& fields = tstruct->get_members();
+  std::string tmp_set_check = tmp("__isset_check");
+  bool has_required = std::count_if(std::begin(fields), std::end(fields), [](const t_field* tfield) {
+    return tfield->get_req() == t_field::T_REQUIRED;
+  });
+  // begin deserialize definition
   indent(out) << "def read(from iprot : ::Thrift::BaseProtocol)" << endl;
   indent_up();
-  {
-    indent(out) << "iprot.read_recursion do" << endl;
-    indent_up();
-    {
-      indent(out) << "iprot.read_struct_begin" << endl;
-      indent(out) << "loop do" << endl;
-      indent_up();
-      {
-        indent(out) << "name, ftype, fid = iprot.read_field_begin" << endl;
-        indent(out) << "next if ftype == ::Thrift::Types::Void" << endl;
-        indent(out) << "break if ftype == ::Thrift::Types::Stop" << endl;
-        indent(out) << "case {fid, ftype}" << endl;
-        for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
-          generate_deserialize_field(out, *f_iter, type_name(tstruct));
+
+  // begin recursion tracking
+  indent(out) << "iprot.read_recursion do" << endl;
+  indent_up();
+
+  // begin reading struct
+  indent(out) << "iprot.read_struct_begin" << endl;
+
+  if (fields.size()) {
+    if (has_required) {
+      // create variables to check if required fields were set
+      indent(out) << tmp_set_check << " = {";
+      bool first = true;
+      for(std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+        if ((*f_iter)->get_req() == t_field::T_REQUIRED) {
+          if (first) {
+            first = false;
+          } else {
+            out << ", ";
+          }
+          out << "\"" << (*f_iter)->get_name() << "\" => false";
         }
-        indent(out) << "else" << endl;
-        indent_up();
-        {
-          indent(out) << "iprot.skip type" << endl;
-        }
-        indent_down();
-        indent(out) << "end" << endl;
-        indent(out) << "iprot.read_field_end" << endl;
       }
-      indent_down();
-      indent(out) << "end" << endl;
-      indent(out) << "iprot.read_struct_end" << endl;
-      if (std::count_if(std::cbegin(fields), std::cend(fields), [](const t_field* tfield) {return tfield->get_req() == t_field::T_REQUIRED;})) {
-        indent(out) << "{% begin %}" << endl;
-        indent(out) << "%empty_fields = @__required_fields__" << type_name(tstruct) << "_set.select{|k,v| !v}" << endl;
-        indent(out) << "raise ::Thrift::ProtocolException.new(::Thrift::ProtocolException::INVALID_DATA, \"Required fields are not set: #{%empty_fields.keys}\") unless %empty_fields.empty?" << endl;
-        indent(out) << "{% end %}" << endl;
-      }
+      out << "}" << endl;
     }
+    indent(out) << "loop do" << endl;
+    indent_up();
+
+    // begin looping over protocol until we recieve a stop
+    indent(out) << "name, ftype, fid = iprot.read_field_begin" << endl;
+    indent(out) << "next if ftype == ::Thrift::Types::Void" << endl;
+    indent(out) << "break if ftype == ::Thrift::Types::Stop" << endl;
+
+    // swith case to route recieved data to field
+    indent(out) << "case {fid, ftype}" << endl;
+    for(std::vector<t_field*>::const_iterator f_iter = fields.cbegin(); f_iter != fields.cend(); ++f_iter) {
+      generate_deserialize_field(out, *f_iter, type_name(tstruct), tmp_set_check);
+    }
+    indent(out) << "else" << endl;
+
+    // skip if we don't know what to do with it
+    indent_up();
+    indent(out) << "iprot.skip ftype" << endl;
+    indent_down();
+
+    // end of switch case
+    indent(out) << "end" << endl;
+    indent(out) << "iprot.read_field_end" << endl;
+
+    // end of looping over protocol
     indent_down();
     indent(out) << "end" << endl;
+
+  } else {
+    indent(out) << "name, ftype, fid = iprot.read_field_begin" << endl;
+    indent(out) << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::MISSING_DATA, \" expected ::Thrift::Types::Stop recieved #{ftype}\" unless ftype == ::Thrift::Types::Stop" << endl;
   }
+  indent(out) << "iprot.read_struct_end" << endl;
+
+  // if we have required fields make sure we read it just now
+  if (has_required) {
+    indent(out) << tmp_set_check << ".select!{|k,v| !v}" << endl;
+    indent(out) << "raise ::Thrift::ProtocolException.new ::Thrift::ProtocolException::MISSING_DATA, \"Required field(s) not set #{" << tmp_set_check << ".keys}\" unless " << tmp_set_check << ".empty?" << endl;
+  }
+
+  // end of recursion tracking
+  indent_down();
+  indent(out) << "end" << endl;
+
+  //end of deserialize definition
   indent_down();
   indent(out) << "end" << endl;
 }
@@ -1504,23 +1506,45 @@ std::string t_cr_generator::generate_cr_struct_required_fields(t_struct* tstruct
 {
   std::string ret = "";
   std::vector<t_field*> fields = tstruct->get_members();
-  std::vector<t_field*>::iterator required_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* ele) {
-    return ele->get_req() == t_field::T_REQUIRED;
+
+  bool has_non_required = std::count_if(std::cbegin(fields), std::cend(fields), [](const t_field* tfield) {
+    return tfield->get_req() != t_field::T_REQUIRED;
   });
 
-  if (required_iter != std::begin(fields)) {
-    ret += indent() + "@__required_fields__" + type_name(tstruct) + "_set = ";
-    bool first = true;
-    ret += "{";
-    for (std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != required_iter; ++f_iter) {
-      if (!first) {
-        ret += ", ";
-      } else {
-        first = false;
+  // generate a isset struct if we have fields
+  if (has_non_required) {
+    // open up isset struct
+    ret += indent() +  "struct " + tstruct->get_name() + "__isset" + endl;
+    indent_up();
+    // add property fields
+    for (std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+      // keep track if optional values are set
+      if ((*f_iter)->get_req() != t_field::T_REQUIRED) {
+        ret += indent() + "property " + cr_underscore((*f_iter)->get_name()) + " : Bool = false" + endl;
       }
-      ret += "\"" + (*f_iter)->get_name() + "\" => false";
     }
-    ret += "}" + endl;
+    ret += endl;
+
+    // small function to allow for succinct field writing if isset
+    for (std::vector<t_field*>::const_iterator f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+      if ((*f_iter)->get_req() != t_field::T_OPTIONAL) {
+        continue;
+      }
+      std::string cr_safe_name = cr_underscore((*f_iter)->get_name());
+      ret += indent() + "def if_" + cr_safe_name + "(&)" + endl;
+
+      indent_up();
+      ret += indent() + "yield if @" + cr_safe_name + endl;
+      indent_down();
+      ret += indent() + "end" + endl + endl;
+    }
+
+    // close out struct
+    indent_down();
+    ret += indent() + "end" + endl + endl;
+
+    // define isset variable
+    ret += indent() + "@__isset = " + tstruct->get_name() + "__isset.new" + endl;
   }
   return ret;
 }
@@ -1530,32 +1554,38 @@ void t_cr_generator::generate_serialize_union(t_cr_ofstream& out, t_struct* tuni
   const std::vector<t_field*>& fields = tunion->get_members();
   std::vector<t_field*>::const_iterator f_iter;
 
+  // begin serialize definition
   indent(out) << "def write(to oprot : ::Thrift::BaseProtocol)" << endl;
   indent_up();
-  {
-    indent(out) << "oprot.write_recursion do" << endl;
+  // begin recursion tracking
+  indent(out) << "oprot.write_recursion do" << endl;
+  indent_up();
+
+  // begin writing field
+  indent(out) << "oprot.write_struct_begin(self.class.name)" << endl;
+  indent(out) << "case union_internal" << endl;
+
+  for(f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+    indent(out) << "when .is_a?(" << render_crystal_type((*f_iter)->get_type());
+    out << ")" << endl;
+    // write field when the union is that field
     indent_up();
-    {
-      indent(out) << "oprot.write_struct_begin(self.class.name)" << endl;
-      indent(out) << "case union_internal" << endl;
-      for(f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
-        indent(out) << "when .is_a?(" << render_crystal_type((*f_iter)->get_type());
-        out << ")" << endl;
-        indent_up();
-        {
-          indent(out) << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", " << render_crystal_type((*f_iter)->get_type()) << "::THRIFT_TYPE, " << (*f_iter)->get_key() << "_i16)" << endl;
-          indent(out) << "@" << (*f_iter)->get_name() << ".write to: oprot" << endl;
-          indent(out) << "oprot.write_field_end" << endl;
-        }
-        indent_down();
-      }
-      indent(out) << "end" << endl;
-      indent(out) << "oprot.write_field_stop" << endl;
-      indent(out) << "oprot.write_struct_end" << endl;
-    }
+    indent(out) << "oprot.write_field_begin(\"" << (*f_iter)->get_name() << "\", " << render_crystal_type((*f_iter)->get_type()) << "::THRIFT_TYPE, " << (*f_iter)->get_key() << "_i16)" << endl;
+    indent(out) << cr_underscore((*f_iter)->get_name()) << ".write to: oprot" << endl;
+    indent(out) << "oprot.write_field_end" << endl;
     indent_down();
-    indent(out) << "end" << endl;
   }
+
+  // end of writing struct
+  indent(out) << "end" << endl;
+  indent(out) << "oprot.write_field_stop" << endl;
+  indent(out) << "oprot.write_struct_end" << endl;
+
+  // end of recursion tracking
+  indent_down();
+  indent(out) << "end" << endl;
+
+  //end of recursion serialize function
   indent_down();
   indent(out) << "end" << endl;
 }
@@ -1565,62 +1595,67 @@ void t_cr_generator::generate_deserialize_union(t_cr_ofstream& out, t_struct* tu
   const std::vector<t_field*>& fields = tunion->get_members();
   std::vector<t_field*>::const_iterator f_iter;
 
-  indent(out) << "def self.read(from iprot : ::Thrift::BaseProtocol)" << endl;
-  indent_up();
-  {
-    indent(out) << "iprot.read_recursion do" << endl;
-    indent_up();
-    {
-      indent(out) << "recieved_union = " << type_name(tunion) << ".allocate" << endl;
-      indent(out) << "iprot.read_struct_begin" << endl;
-      indent(out) << "loop do" << endl;
-      indent_up();
-      {
-        indent(out) << "fname, ftype, fid = iprot.read_field_begin" << endl;
-        indent(out) << "break if ftype == ::Thrift::Types::Stop" << endl;
-        indent(out) << "raise \"Too Many fields for Union\" if union_set?" << endl;
-        indent(out) << "case {fid,ftype}" << endl;
-        for (f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
-          indent(out) << "when {" << (*f_iter)->get_key() << ", " << render_crystal_type((*f_iter)->get_type(), true) << "::THRIFT_TYPE}" << endl;
-          indent_up();
-          {
-              indent(out) << "received_union." << (*f_iter)->get_name() << " = " << render_crystal_type((*f_iter)->get_type()) << ".read from: iprot" << endl;
-          }
-          indent_down();
-        }
-        indent(out) << "else" << endl;
-        indent_up();
-        {
-          indent(out) << "iprot.skip type" << endl;
-        }
-        indent_down();
-        indent(out) << "end" << endl;
 
-        indent(out) << "iprot.read_field_end" << endl;
-      }
-      indent_down();
-      indent(out) << "end" << endl;
-      indent(out) << "iprot.read_struct_end" << endl;
-      indent(out) << "received_union.validate" << endl;
-      indent(out) << "received_union" << endl;
-    }
+  // begin read definition
+  indent(out) << "def read(from iprot : ::Thrift::BaseProtocol)" << endl;
+  indent_up();
+
+  // begin recursion tracking
+  indent(out) << "iprot.read_recursion do" << endl;
+  indent_up();
+
+  // begin reading union
+  indent(out) << "iprot.read_struct_begin" << endl;
+  indent(out) << "loop do" << endl;
+  indent_up();
+
+  // loop and read from transport
+  indent(out) << "fname, ftype, fid = iprot.read_field_begin" << endl;
+  indent(out) << "break if ftype == ::Thrift::Types::Stop" << endl;
+  indent(out) << "raise \"Too Many fields for Union\" if union_set?" << endl;
+
+  // route recieved data to variables
+  indent(out) << "case {fid,ftype}" << endl;
+  for (f_iter = std::cbegin(fields); f_iter != std::cend(fields); ++f_iter) {
+    indent(out) << "when {" << (*f_iter)->get_key() << ", " << render_crystal_type((*f_iter)->get_type(), true) << "::THRIFT_TYPE}" << endl;
+    indent_up();
+    // set field with recieved protocol
+    indent(out) << "@storage" << (*f_iter)->get_name() << " = " << render_crystal_type((*f_iter)->get_type()) << ".read from: iprot" << endl;
     indent_down();
-    indent(out) << "end" << endl;
   }
+  // skip the field if we don't know what to do with it
+  indent(out) << "else" << endl;
+  indent_up();
+  indent(out) << "iprot.skip ftype" << endl;
+  indent_down();
+  indent(out) << "end" << endl;
+
+  indent(out) << "iprot.read_field_end" << endl;
+  // end of looping
+  indent_down();
+  indent(out) << "end" << endl;
+  indent(out) << "iprot.read_struct_end" << endl;
+  indent(out) << "received_union.validate" << endl;
+  //end of recursion tracking
+  indent_down();
+  indent(out) << "end" << endl;
+  // end of read definition
   indent_down();
   indent(out) << "end" << endl;
 }
 
-  void t_cr_generator::generate_deserialize_field(t_cr_ofstream& out, t_field* tfield, std::string class_name) {
+  void t_cr_generator::generate_deserialize_field(t_cr_ofstream& out, t_field* tfield, std::string class_name, const std::string& isset_check) {
 
-  indent(out) << "when {" << tfield->get_key() << ", " << render_crystal_type(tfield->get_type(), true) << "::THRIFT_TYPE}" << endl;
+  indent(out) << "when {" << tfield->get_key() << ", " << render_crystal_type(tfield->get_type(), true) << ".thrift_type}" << endl;
   indent_up();
-  {
-    indent(out) << "@" << tfield->get_name() << " = " << render_crystal_type(tfield->get_type()) << ".read from: oprot" << endl;
-    if(tfield->get_req() == t_field::T_REQUIRED) {
-      indent(out) << "@__required_fields__" << class_name << "_set[\"" << tfield->get_name() << "\"] = true" << endl;
-    }
+
+  // read type of field into instance
+  indent(out) << "@" << cr_underscore(tfield->get_name()) << " = " << render_crystal_type(tfield->get_type()) << ".read from: iprot" << endl;
+  if (tfield->get_req() == t_field::T_REQUIRED) {
+    // set flag for checking
+    indent(out) << isset_check << "[\"" << tfield->get_name() << "\"] = true" << endl;
   }
+  // end of reading field
   indent_down();
 }
 
