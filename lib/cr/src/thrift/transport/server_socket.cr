@@ -4,19 +4,15 @@ require "./socket.cr"
 
 module Thrift
   class ServerSocketTransport < BaseServerTransport
-
     @handle : TCPServer?
     @host : String?
     @port : Int32
 
-    # call-seq: initialize(host = nil, port)
     def initialize(@host, @port)
     end
 
     def initialize(@port)
     end
-
-    getter :handle
 
     def listen
       if host = @host
@@ -26,8 +22,8 @@ module Thrift
       end
     end
 
-    def accept
-      if handle = @handle
+    def accept?
+      @handle.try do |handle|
         sock = handle.accept
         trans = SocketTransport.new
         trans.handle = sock
@@ -36,13 +32,21 @@ module Thrift
     end
 
     def close
-      if (handle = @handle)
+      @handle.try do |handle|
         handle.close unless handle.closed?
       end
     end
 
+    def closed?
+      if handle = @handle
+        handle.closed?
+      else
+        true
+      end
+    end
+
     def to_io
-      handle
+      @handle
     end
 
     def to_s

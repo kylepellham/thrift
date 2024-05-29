@@ -1,5 +1,9 @@
+require "./types.cr"
+require "./protocol/base_protocol.cr"
+
+# reopen slice so we can make a succinct way to expand slices
 struct Slice(T)
-  def join(other : self)
+  def join_with(other : self)
     new_slice = Pointer(T).malloc self.size + other.size
     appender = new_slice.appender
     self.each do |element|
@@ -11,7 +15,7 @@ struct Slice(T)
     Slice.new(new_slice, appender.size)
   end
 
-  def << (other : self)
-    join(other)
+  def <<(other : self)
+    join_with(other)
   end
 end

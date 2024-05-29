@@ -519,7 +519,7 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   generate_rdoc(out, tstruct);
   indent(out) << "class " << type_name(tstruct) << endl;
   indent_up();
-  indent(out) << "include ::Thrift::Struct" << endl << endl;
+  indent(out) << "include ::Thrift::Struct" << endl;
 
   const std::vector<t_field*>& fields = tstruct->get_members();
   std::vector<t_field*>::const_iterator f_iter;
@@ -532,6 +532,7 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
 
 void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
 {
+  out << endl;
     // we take a copy because we need to sort these by requiredness
   std::vector<t_field*> members = tstruct->get_members();
   std::vector<t_field*>::iterator required_wo_default_iter = std::partition(std::begin(members), std::end(members), [](const t_field* tfield) {
@@ -595,6 +596,7 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
 void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
                                        t_struct* tstruct,
                                        bool is_exception = false) {
+  out << endl;
   (void)is_exception;
   generate_rdoc(out, tstruct);
   indent(out) << "class " << type_name(tstruct) << endl;
@@ -603,7 +605,7 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
 
   generate_field_defns(out, tstruct);
   indent_down();
-  indent(out) << "end" << endl << endl;
+  indent(out) << "end" << endl;
 }
 
 std::string t_cr_generator::render_crystal_type(t_type* ttype,
@@ -688,6 +690,7 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype,
 }
 
 void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct) {
+  out << endl;
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
@@ -696,7 +699,7 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
     first = false;
     generate_rdoc(out, tstruct);
     std::string cr_safe_name = fix_name_conflict((*f_iter)->get_name());
-    indent(out) << "@[::Thrift::Struct::Property(" << render_property_type((*f_iter)->get_req(), (*f_iter)->get_key(), cr_safe_name != (*f_iter)->get_name(), (*f_iter)->get_name()) << ")]" << endl;
+    indent(out) << "@[Properties(" << render_property_type((*f_iter)->get_req(), (*f_iter)->get_key(), cr_safe_name != (*f_iter)->get_name(), (*f_iter)->get_name()) << ")]" << endl;
     if (tstruct->is_union()) {
       indent(out) << "union_property ";
       generate_union_field_data(out, (*f_iter)->get_type(), cr_safe_name);
@@ -709,9 +712,6 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
       generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_value(), cr_safe_name,
                           (*f_iter)->get_req());
     }
-    out << endl;
-  }
-  if (!first) {
     out << endl;
   }
 }
@@ -792,7 +792,6 @@ void t_cr_generator::generate_service(t_service* tservice) {
 
   indent_down();
   indent(f_service_) << "end" << endl;
-    // f_service_ << module_end_;
 
   int curr_indent = indent_count();
   for(int remaining_indent = indent_count(); remaining_indent > 0; --remaining_indent) {
@@ -1373,6 +1372,7 @@ std::string t_cr_generator::render_property_type(t_field::e_req req,int key, boo
 
 void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_struct* tstruct)
 {
+  out << endl;
   std::vector<t_field*> fields = tstruct->get_members();
   std::vector<t_field*>::iterator required_fields_wo_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* tfield) {
     return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;

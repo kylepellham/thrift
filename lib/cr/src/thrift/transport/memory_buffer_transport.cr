@@ -1,5 +1,5 @@
 # encoding: ascii-8bit
-# 
+#
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements. See the NOTICE file
 # distributed with this work for additional information
@@ -7,9 +7,9 @@
 # to you under the Apache License, Version 2.0 (the
 # "License"); you may not use this file except in compliance
 # with the License. You may obtain a copy of the License at
-# 
+#
 #   http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing,
 # software distributed under the License is distributed on an
 # "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
@@ -19,17 +19,21 @@
 #
 
 require "./base_transport.cr"
-require "../byte_helpers.cr"
+require "../helpers.cr"
 
 module Thrift
+  # Crystal has a built in memory buffer IO but we need to handle indexing different
   class MemoryBufferTransport < BaseTransport
-    GARBAGE_BUFFER_SIZE = 0x1 << 12 # 4kB
+    DEFAULT_BUFFER = 0x1 << 12 # 4kB
 
-     @buf : Bytes
-     @index : Int32
-    def initialize(buffer : Bytes? = nil)
-      @buf = buffer ? buffer : Bytes.empty
-      @index = 0
+    @buf : Pointer(UInt8)
+    @pos : Int32
+    @total_bytes : Int32
+
+    def initialize(@capacity : Int32 = DEFAULT_BUFFER)
+      @buf = Pointer(UInt8).malloc(@capacity)
+      @pos = 0
+      @total_bytes = 0
     end
 
     def open?
@@ -38,67 +42,56 @@ module Thrift
 
     def open
     end
-    
+
     def close
     end
 
     def peek
-      @index < @buf.size
+      if @total_bytes <= @pos
+        nil
+      else
+        Slice.new(@buf + @pos, @total_bytes - @pos)
+      end
     end
 
-    def reset_buffer(new_buffer : Bytes)
-      @buf = new_buffer
-      @index = 0
+    def reset_buffer
+      @pos = 0
+      @total_bytes = 0
     end
 
     def available
-      @buf.length - @index
+      @total_bytes - @pos
     end
 
-    def read(len)
-      data = @buf[@index..@index + len]
-      @index += len
-      if @index >= GARBAGE_BUFFER_SIZE
-        @buf = @buf[@index..-1]
-        @index = 0
+    def read(slice : Bytes)
+      # return 0 if slice.empty?
+      slice.copy_from(@buf + @pos, slice.size)
+      @pos += slice.size
+      @pos = @total_bytes if @pos > @total_bytes
+      if @pos >= @capacity
+        @buf.move_from(@buf + @pos - @capacity, @pos - @capacity)
+        @pos = 0
       end
-      if data.size < len
-        raise IO::Error.new "Not Enough Bytes Remain in buffer"
-      end
-      data
+      slice.size
+    rescue
+      raise IO::Error.new "Not Enough Bytes Remain in buffer"
     end
 
-    def read_bytes
-      raise IO::Error.new "Not Enough Bytes Remain in buffer" if @index >= @buf.size
-      val = @buf[@index]
-      @index += 1
-      if @index >= GARBAGE_BUFFER_SIZE
-        @buf = @buf[@index..-1]
-        @index = 0
+    def read_byte
+      pos = Math.min(@pos, @total_bytes)
+      if pos >= @total_bytes
+        nil
+      else
+        val = @buf[@pos]
+        @pos += 1
+        val
       end
-      val
     end
 
-    def read_into_buffer(buffer, size)
-      i = 0
-      while i < size
-        raise IO::Error.new "Not enough bytes remain in buffer" if @index >= @buf.size
-
-        byte = @buf[@index]
-        buffer[i] = byte
-        @index += 1
-        i += 1
-      end
-
-      if @index >= GARBAGE_BUFFER_SIZE
-        @buf = @buf[@index..-1]
-        @index = 0
-      end
-      i
-    end
-
-    def write(wbuf : Bytes)
-      @buf.join_with(wbuf)
+    def write(slice : Bytes) : Nil
+      raise IO::Error.new "Overflow" if @total_bytes + slice.size > @capacity
+      slice.move_to(@buf + @total_bytes, slice.size)
+      @total_bytes += slice.size
     end
 
     def flush
@@ -109,5 +102,3 @@ module Thrift
     end
   end
 end
-
-
