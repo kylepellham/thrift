@@ -1,9 +1,0 @@
-name: thrift
-version: 0.1.0
-
-authors:
-  - Kyle Pellham <kyle.pellham@nikolamotor.com>
-
-crystal: 1.5.1
-
-license: Apache 2.0

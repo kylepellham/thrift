@@ -169,7 +169,6 @@ public:
   std::string full_type_name(const t_type* ttype);
   std::string function_signature(t_function* tfunction, std::string prefix = "");
   std::string argument_list(t_struct* tstruct);
-  std::string type_to_enum(t_type* ttype);
   std::string cr_namespace_to_path_prefix(std::string cr_namespace);
 
   std::vector<std::string> crystal_modules(const t_program* p) {
@@ -206,7 +205,14 @@ private:
   t_cr_ofstream f_service_;
 
   std::string namespace_dir_;
+
+  /**
+   * save service namespace opening as a string to add where ever we need
+   */
   std::string module_begin_;
+  /**
+   * save service namespace closure as a string to write whenever we need it
+   */
   std::string module_end_;
 
   bool no_skeleton_;
@@ -281,9 +287,7 @@ void t_cr_generator::close_generator() {
 }
 
 /**
- * Generates a typedef. This is not done in Crystal, types are all implicit.
- *
- * @param ttypedef The type definition
+ * Generates a typedef. alias is the equivalent of a typedef
  */
 void t_cr_generator::generate_typedef(t_typedef* ttypedef) {
   f_types_ << endl;
@@ -292,10 +296,7 @@ void t_cr_generator::generate_typedef(t_typedef* ttypedef) {
 }
 
 /**
- * Generates code for an enumerated type. Done using a class to scope
- * the values.
- *
- * @param tenum The enumeration
+ * Generates code for an enumerated type.
  */
 void t_cr_generator::generate_enum(t_enum* tenum) {
   f_types_ << endl;
@@ -469,8 +470,6 @@ void t_cr_generator::generate_forward_declaration(t_struct* tstruct) {
 /**
  * Generates a struct definition for a thrift exception. Basically the same
  * as a struct but extends the Exception class.
- *
- * @param txception The struct definition
  */
 void t_cr_generator::generate_xception(t_struct* txception) {
 
@@ -512,6 +511,9 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   indent(out) << "end" << endl;
 }
 
+/**
+ * Generates an initializer for a struct
+ */
 void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
 {
   out << endl;
@@ -590,6 +592,11 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
   indent(out) << "end" << endl;
 }
 
+/**
+ * Takes Thrift type and converts it to associated Crystal type
+ *
+ * @return std::string
+ */
 std::string t_cr_generator::render_crystal_type(t_type* ttype,
                                                    bool base,
                                                    bool optional) {
@@ -671,6 +678,12 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype,
   return rendered_type;
 }
 
+/**
+ * Generates properties of class, adds metadata to properties
+ *
+ * @param out Ofstream to write field definitions to
+ * @param tstruct definition of struct
+ */
 void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct) {
   out << endl;
   const vector<t_field*>& fields = tstruct->get_members();
@@ -699,7 +712,7 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
 }
 
 /**
- * @brief generate a crystal compliant property declaration
+ * Generate a crystal compliant property declaration
  */
 void t_cr_generator::generate_field_data(t_cr_ofstream& out,
                                          t_type*  field_type,
@@ -714,7 +727,7 @@ void t_cr_generator::generate_field_data(t_cr_ofstream& out,
 }
 
 /**
- * @brief generate crystal compliant property for a thrift union
+ * Generate crystal compliant property for a thrift union
  */
 void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
                                                t_type* field_type,
@@ -722,6 +735,12 @@ void t_cr_generator::generate_union_field_data(t_cr_ofstream& out,
   out << field_name << " : " << render_crystal_type(get_true_type(field_type));
 }
 
+/**
+ * Generates namespace string and modifies indent level
+ *
+ * @param modules Modules for service
+ * @return std::string
+ */
 std::string t_cr_generator::begin_namespace(vector<std::string> modules) {
   std::string scope = "";
   for (auto& module : modules) {
@@ -731,12 +750,17 @@ std::string t_cr_generator::begin_namespace(vector<std::string> modules) {
   return scope;
 }
 
+/**
+ * Generates closures and maintains indent level
+ *
+ * @param modules Modules for service
+ * @return std::string
+ */
 std::string t_cr_generator::end_namespace(vector<std::string> modules) {
   int indents = indent_count();
   std::string scope = "";
-  while (indents < modules.size()) {
+  while (indent_count() < modules.size()) {
     indent_up();
-    ++indents;
   }
   for (vector<std::string>::reverse_iterator m_iter = modules.rbegin(); m_iter != modules.rend();
        ++m_iter) {
@@ -758,6 +782,7 @@ void t_cr_generator::generate_service(t_service* tservice) {
   string f_service_name = namespace_dir_ + underscore(service_name_) + ".cr";
   f_service_.open(f_service_name.c_str());
 
+  // generate skeleton for service
   if (!no_skeleton_) {
     generate_service_skeleton(tservice);
   }
@@ -1081,7 +1106,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
 /**
  * @brief underscore method to match crystal
  *        underscore ex: IAMUPCASE -> iamupcase
- *                       IAMlowercase -> iam_lowercase
+ *                       IAMlowercase -> ia_mlowercase
  *
  * @param in
  * @return std::string
@@ -1164,6 +1189,12 @@ string t_cr_generator::type_name(const t_type* ttype) {
   return prefix + name;
 }
 
+/**
+ * For generated types we want to namespace the types properly
+ *
+ * @param ttype the type we wan't to namespace
+ * @return string
+ */
 string t_cr_generator::full_type_name(const t_type* ttype) {
   string prefix = "::";
   vector<std::string> modules = crystal_modules(ttype->get_program());
@@ -1171,51 +1202,6 @@ string t_cr_generator::full_type_name(const t_type* ttype) {
     prefix += module + "::";
   }
   return prefix + type_name(ttype);
-}
-
-/**
- * Converts the parse type to a Crystal type
- */
-string t_cr_generator::type_to_enum(t_type* type) {
-  type = get_true_type(type);
-
-  if (type->is_base_type()) {
-    t_base_type::t_base tbase = ((t_base_type*)type)->get_base();
-    switch (tbase) {
-    case t_base_type::TYPE_VOID:
-      throw "NO T_VOID CONSTRUCT";
-    case t_base_type::TYPE_STRING:
-      return "::Thrift::Types::String";
-    case t_base_type::TYPE_BOOL:
-      return "::Thrift::Types::Bool";
-    case t_base_type::TYPE_I8:
-      return "::Thrift::Types::Byte";
-    case t_base_type::TYPE_I16:
-      return "::Thrift::Types::I16";
-    case t_base_type::TYPE_I32:
-      return "::Thrift::Types::I32";
-    case t_base_type::TYPE_I64:
-      return "::Thrift::Types::I64";
-    case t_base_type::TYPE_DOUBLE:
-      return "::Thrift::Types::Double";
-    case t_base_type::TYPE_UUID:
-      return "::Thrift::Types::Uuid";
-    default:
-      throw "compiler error: unhandled type";
-    }
-  } else if (type->is_enum()) {
-    return "::Thrift::Types::I32";
-  } else if (type->is_struct() || type->is_xception()) {
-    return "::Thrift::Types::Struct";
-  } else if (type->is_map()) {
-    return "::Thrift::Types::Map";
-  } else if (type->is_set()) {
-    return "::Thrift::Types::Set";
-  } else if (type->is_list()) {
-    return "::Thrift::Types::List";
-  }
-
-  throw "INVALID TYPE IN type_to_enum: " + type->get_name();
 }
 
 void t_cr_generator::generate_crdoc(std::ostream& out, t_doc* tdoc) {
@@ -1309,6 +1295,15 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
   }
 }
 
+/**
+ * Generate metadata used for Crystal thrift library
+ *
+ * @param req requirement for the field
+ * @param key field id for serialization
+ * @param name_altered denotes if we adjusted the name to make name Crystal compatible
+ * @param orig_name if we adjusted the name of this field we will pass the original name
+ * @return std::string
+ */
 std::string t_cr_generator::render_property_type(t_field::e_req req,int key, bool name_altered, const std::string& orig_name)
 {
   static const std::vector<std::string> req_to_symbol = {
@@ -1320,6 +1315,12 @@ std::string t_cr_generator::render_property_type(t_field::e_req req,int key, boo
   return ret;
 }
 
+/**
+ * Generate initializer for Crystal exception
+ *
+ * @param out ofstream we write generated code to
+ * @param tstruct struct to generate code for
+ */
 void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_struct* tstruct)
 {
   out << endl;
@@ -1355,12 +1356,24 @@ void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_str
   indent(out) << "end" << endl;
 }
 
+/**
+ * Fix any name conflicts from idl in Crystal
+ *
+ * @param in
+ */
 std::string t_cr_generator::fix_name_conflict(std::string in)
 {
   const static std::vector<std::string> no_no_words = {
     "message",
     "backtrace",
-    "callstack"
+    "callstack",
+    "module",
+    "end",
+    "class",
+    "struct",
+    "enum",
+    "union",
+    "lib"
   };
 
   in = cr_underscore(in);
