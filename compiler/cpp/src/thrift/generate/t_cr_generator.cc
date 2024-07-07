@@ -1381,7 +1381,7 @@ void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_str
 std::string t_cr_generator::fix_name_conflict(std::string in) {
   const static std::vector<std::string> no_no_words
       = {"message", "backtrace", "callstack", "module", "end",
-         "class",   "struct",    "enum",      "union",  "lib"};
+         "class",   "struct",    "enum",      "union",  "lib", "return"};
 
   in = cr_underscore(in);
 
