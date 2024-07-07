@@ -1,3 +1,0 @@
-[submodule "thrift_cr"]
-  path = cr
-  url = https://github.com/kylepellham/thrift_cr
