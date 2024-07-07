@@ -155,16 +155,17 @@ public:
    * Helper rendering functions
    */
 
-  std::string render_crystal_type(t_type* ttype,
-                                     bool base = false,
-                                     bool optional = false);
+  std::string render_crystal_type(t_type* ttype, bool base = false, bool optional = false);
   std::string cr_underscore(std::string in);
   std::string fix_name_conflict(std::string in);
   std::string generate_cr_struct_required_fields(t_struct* tstruct);
   std::string cr_autogen_comment();
   std::string render_require_thrift();
   std::string render_includes();
-  std::string render_property_type(t_field::e_req req, int key, bool name_altered, const std::string& orig_name = "");
+  std::string render_property_type(t_field::e_req req,
+                                   int key,
+                                   bool name_altered,
+                                   const std::string& orig_name = "");
   std::string type_name(const t_type* ttype);
   std::string full_type_name(const t_type* ttype);
   std::string function_signature(t_function* tfunction, std::string prefix = "");
@@ -242,12 +243,13 @@ void t_cr_generator::init_generator() {
   module_begin_ = begin_namespace(crystal_modules(program_));
   module_end_ = end_namespace(crystal_modules(program_));
   // Print header
-  f_types_ << cr_autogen_comment() << endl << render_require_thrift() << render_includes() << endl
+  f_types_ << cr_autogen_comment() << endl
+           << render_require_thrift() << render_includes() << endl
            << module_begin_;
 
   f_consts_ << cr_autogen_comment() << endl
-            << render_require_thrift() << "require \"./"
-            << underscore(program_name_) << "_types\"" << endl
+            << render_require_thrift() << "require \"./" << underscore(program_name_) << "_types\""
+            << endl
             << endl
             << module_begin_;
 }
@@ -258,8 +260,7 @@ string t_cr_generator::render_includes() {
   for (auto include : includes) {
     t_program* included = include;
     string included_name = included->get_name();
-    result
-        += "require \"./" + underscore(included_name) + "_types.cr\"" + endl;
+    result += "require \"./" + underscore(included_name) + "_types.cr\"" + endl;
   }
   if (includes.size() > 0) {
     result += endl;
@@ -292,7 +293,8 @@ void t_cr_generator::close_generator() {
 void t_cr_generator::generate_typedef(t_typedef* ttypedef) {
   f_types_ << endl;
   generate_crdoc(f_types_, ttypedef);
-  indent(f_types_) << "alias " << ttypedef->get_symbolic() << " = " << render_crystal_type(ttypedef->get_type(), false, false) << endl;
+  indent(f_types_) << "alias " << ttypedef->get_symbolic() << " = "
+                   << render_crystal_type(ttypedef->get_type(), false, false) << endl;
 }
 
 /**
@@ -371,7 +373,8 @@ t_cr_ofstream& t_cr_generator::render_const_value(t_cr_ofstream& out,
     }
   } else if (type->is_enum()) {
     t_enum* as_enum = (t_enum*)type;
-    out << as_enum->get_name() << "::" << capitalize(lowercase(as_enum->get_constant_by_value(value->get_integer())->get_name()));
+    out << as_enum->get_name() << "::"
+        << capitalize(lowercase(as_enum->get_constant_by_value(value->get_integer())->get_name()));
   } else if (type->is_struct() || type->is_xception()) {
     out << full_type_name(type) << ".new(" << endl;
     indent_up();
@@ -464,8 +467,7 @@ void t_cr_generator::generate_struct(t_struct* tstruct) {
  * always been the case. These declarations allow thrift to generate valid
  * Crystal in cases where thrift structs rely on recursive definitions.
  */
-void t_cr_generator::generate_forward_declaration(t_struct* tstruct) {
-}
+void t_cr_generator::generate_forward_declaration(t_struct* tstruct) {}
 
 /**
  * Generates a struct definition for a thrift exception. Basically the same
@@ -514,19 +516,19 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
 /**
  * Generates an initializer for a struct
  */
-void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct)
-{
+void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct* tstruct) {
   out << endl;
-    // we take a copy because we need to sort these by requiredness
+  // we take a copy because we need to sort these by requiredness
   std::vector<t_field*> members = tstruct->get_members();
-  std::vector<t_field*>::iterator required_wo_default_iter = std::partition(std::begin(members), std::end(members), [](const t_field* tfield) {
-    return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;
-  });
+  std::vector<t_field*>::iterator required_wo_default_iter
+      = std::partition(std::begin(members), std::end(members), [](const t_field* tfield) {
+          return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;
+        });
   std::vector<t_field*>::const_iterator m_iter;
   bool first = true;
   indent(out) << "def initialize(";
   // required fields come first in initialization order
-  for (m_iter = std::cbegin(members); m_iter != required_wo_default_iter; ++m_iter) {
+  for (m_iter = std::begin(members); m_iter != required_wo_default_iter; ++m_iter) {
     if (first) {
       first = false;
     } else {
@@ -540,11 +542,12 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
       out << ", ";
     }
     // for crystal we use positional args for required value without default args
-    // and use keyword args for all fields that are not required or required fields with default arguments
+    // and use keyword args for all fields that are not required or required fields with default
+    // arguments
     out << "*";
 
-    //non-required fields with defaults come after
-    for (m_iter = required_wo_default_iter; m_iter != std::cend(members); ++m_iter) {
+    // non-required fields with defaults come after
+    for (m_iter = required_wo_default_iter; m_iter != std::end(members); ++m_iter) {
       out << ", " << fix_name_conflict((*m_iter)->get_name()) << " = nil";
     }
   }
@@ -552,16 +555,18 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
   indent_up();
 
   first = true;
-  for (m_iter = required_wo_default_iter; m_iter != std::cend(members); ++m_iter) {
+  for (m_iter = required_wo_default_iter; m_iter != std::end(members); ++m_iter) {
     // basically we can lump in required with default values and optionals
     if (first) {
       first = false;
     } else {
       out << endl;
     }
-    indent(out) << fix_name_conflict((*m_iter)->get_name()) << ".try do |" << fix_name_conflict((*m_iter)->get_name()) << "|" << endl;
+    indent(out) << fix_name_conflict((*m_iter)->get_name()) << ".try do |"
+                << fix_name_conflict((*m_iter)->get_name()) << "|" << endl;
     indent_up();
-    indent(out) << "@" << fix_name_conflict((*m_iter)->get_name()) << " = " << fix_name_conflict((*m_iter)->get_name()) << endl;
+    indent(out) << "@" << fix_name_conflict((*m_iter)->get_name()) << " = "
+                << fix_name_conflict((*m_iter)->get_name()) << endl;
     // don't generate isset for required fields
     if ((*m_iter)->get_req() == t_field::T_OPTIONAL) {
       indent(out) << "@__isset." << fix_name_conflict((*m_iter)->get_name()) << " = true" << endl;
@@ -597,9 +602,7 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
  *
  * @return std::string
  */
-std::string t_cr_generator::render_crystal_type(t_type* ttype,
-                                                   bool base,
-                                                   bool optional) {
+std::string t_cr_generator::render_crystal_type(t_type* ttype, bool base, bool optional) {
   std::string rendered_type = "";
   if (ttype->is_typedef()) {
     rendered_type += full_type_name(ttype);
@@ -652,7 +655,8 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype,
     if (base) {
       return rendered_type;
     }
-    rendered_type += "(" + render_crystal_type(((t_map*)ttype)->get_key_type()) + ", " + render_crystal_type(((t_map*)ttype)->get_val_type()) + ")";
+    rendered_type += "(" + render_crystal_type(((t_map*)ttype)->get_key_type()) + ", "
+                     + render_crystal_type(((t_map*)ttype)->get_val_type()) + ")";
   } else if (ttype->is_list() || ttype->is_set()) {
     t_type* ele_type;
     if (ttype->is_list()) {
@@ -694,11 +698,15 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
     first = false;
     generate_crdoc(out, *f_iter);
     std::string cr_safe_name = fix_name_conflict((*f_iter)->get_name());
-    indent(out) << "@[SerialOpts(" << render_property_type((*f_iter)->get_req(), (*f_iter)->get_key(), cr_safe_name != (*f_iter)->get_name(), (*f_iter)->get_name()) << ")]" << endl;
+    indent(out) << "@[SerialOpts("
+                << render_property_type((*f_iter)->get_req(), (*f_iter)->get_key(),
+                                        cr_safe_name != (*f_iter)->get_name(),
+                                        (*f_iter)->get_name())
+                << ")]" << endl;
     if (tstruct->is_union()) {
       indent(out) << "union_property ";
       generate_union_field_data(out, (*f_iter)->get_type(), cr_safe_name);
-    } else if(tstruct->is_xception()) {
+    } else if (tstruct->is_xception()) {
       indent(out) << "xception_getter ";
       generate_field_data(out, (*f_iter)->get_type(), (*f_iter)->get_value(), cr_safe_name,
                           (*f_iter)->get_req());
@@ -715,11 +723,12 @@ void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct)
  * Generate a crystal compliant property declaration
  */
 void t_cr_generator::generate_field_data(t_cr_ofstream& out,
-                                         t_type*  field_type,
+                                         t_type* field_type,
                                          t_const_value* value,
                                          const std::string& field_name = "",
                                          t_field::e_req req = t_field::T_OPTIONAL) {
-  out << field_name << " : " << render_crystal_type(get_true_type(field_type), false, req != t_field::T_REQUIRED);
+  out << field_name << " : "
+      << render_crystal_type(get_true_type(field_type), false, req != t_field::T_REQUIRED);
   if (value) {
     out << " = ";
     render_const_value(out, field_type, value);
@@ -790,12 +799,11 @@ void t_cr_generator::generate_service(t_service* tservice) {
   f_service_ << cr_autogen_comment() << endl << render_require_thrift();
 
   if (tservice->get_extends() != nullptr) {
-    f_service_ << "require \"./" << underscore(tservice->get_extends()->get_name()) << ".cr\"" << endl;
+    f_service_ << "require \"./" << underscore(tservice->get_extends()->get_name()) << ".cr\""
+               << endl;
   }
 
-  f_service_ << "require \"./" << underscore(program_name_) << "_types.cr\"" << endl
-             << endl;
-
+  f_service_ << "require \"./" << underscore(program_name_) << "_types.cr\"" << endl << endl;
 
   f_service_ << module_begin_;
   indent(f_service_) << "module " << capitalize(tservice->get_name()) << endl;
@@ -918,7 +926,8 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
     indent(f_service_) << messageSendProc << "(\"" << outgoing_name << "\", " << argsname;
 
     for (fld_iter = fields.begin(); fld_iter != fields.end(); ++fld_iter) {
-      f_service_ << ", " << cr_underscore((*fld_iter)->get_name()) << ": " << cr_underscore((*fld_iter)->get_name());
+      f_service_ << ", " << cr_underscore((*fld_iter)->get_name()) << ": "
+                 << cr_underscore((*fld_iter)->get_name());
     }
 
     f_service_ << ")" << endl;
@@ -930,8 +939,8 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       std::string resultname = capitalize((*f_iter)->get_name() + "_result");
       t_struct noargs(program_);
 
-      t_function recv_function((*f_iter)->get_returntype(), string("recv_") + cr_underscore((*f_iter)->get_name()),
-                               &noargs);
+      t_function recv_function((*f_iter)->get_returntype(),
+                               string("recv_") + cr_underscore((*f_iter)->get_name()), &noargs);
       // Open function
       f_service_ << endl;
       indent(f_service_) << "def " << function_signature(&recv_function) << endl;
@@ -958,9 +967,10 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
         indent(f_service_) << "return" << endl;
       } else {
         indent(f_service_) << "raise "
-                               "::Thrift::ApplicationException.new(::Thrift::ApplicationException::"
-                               "MISSING_RESULT, \""
-                            << (*f_iter)->get_name() << " failed: unknown result\") if result.success.nil?" << endl;
+                              "::Thrift::ApplicationException.new(::Thrift::ApplicationException::"
+                              "MISSING_RESULT, \""
+                           << (*f_iter)->get_name()
+                           << " failed: unknown result\") if result.success.nil?" << endl;
       }
       // Careful, only return _result if not a void function
       if (!(*f_iter)->get_returntype()->is_void()) {
@@ -1024,8 +1034,9 @@ void t_cr_generator::generate_service_server(t_service* tservice) {
 void t_cr_generator::generate_process_function(t_service* tservice, t_function* tfunction) {
   (void)tservice;
   // Open function
-  indent(f_service_) << "def process_" << cr_underscore(tfunction->get_name()) << "(seqid, iprot, oprot)" << endl;
-  //#1
+  indent(f_service_) << "def process_" << cr_underscore(tfunction->get_name())
+                     << "(seqid, iprot, oprot)" << endl;
+  // #1
   indent_up();
 
   string argsname = capitalize(tfunction->get_name()) + "_args";
@@ -1045,7 +1056,7 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
   // Try block for a function with exceptions
   if (xceptions.size() > 0) {
     indent(f_service_) << "begin" << endl;
-    //#2
+    // #2
     indent_up();
   }
 
@@ -1071,15 +1082,15 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
   f_service_ << ")" << endl;
 
   if (!tfunction->is_oneway() && xceptions.size() > 0) {
-    //#2 close
+    // #2 close
     indent_down();
     for (x_iter = xceptions.begin(); x_iter != xceptions.end(); ++x_iter) {
       indent(f_service_) << "rescue " << (*x_iter)->get_name() << " : "
-                          << full_type_name((*x_iter)->get_type()) << endl;
+                         << full_type_name((*x_iter)->get_type()) << endl;
       if (!tfunction->is_oneway()) {
         indent_up();
         indent(f_service_) << "result." << (*x_iter)->get_name() << " = " << (*x_iter)->get_name()
-                            << endl;
+                           << endl;
         indent_down();
       }
     }
@@ -1089,14 +1100,14 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
   // Shortcut out here for oneway functions
   if (tfunction->is_oneway()) {
     indent(f_service_) << "return" << endl;
-    //#1 close
+    // #1 close
     indent_down();
     indent(f_service_) << "end" << endl;
     return;
   }
 
   indent(f_service_) << "write_result(result, oprot, \"" << tfunction->get_name() << "\", seqid)"
-                      << endl;
+                     << endl;
 
   // Close function
   indent_down();
@@ -1111,16 +1122,14 @@ void t_cr_generator::generate_process_function(t_service* tservice, t_function* 
  * @param in
  * @return std::string
  */
-std::string t_cr_generator::cr_underscore(std::string in)
-{
+std::string t_cr_generator::cr_underscore(std::string in) {
   bool recently_inserted = false;
   in[0] = tolower(in[0]);
   size_t i = 1;
-  for(; i < in.size(); ++i)
-  {
+  for (; i < in.size(); ++i) {
     if (isupper(in[i])) {
       in[i] = tolower(in[i]);
-      if(i < in.size() - 1 && islower(in[i + 1]) && !recently_inserted) {
+      if (i < in.size() - 1 && islower(in[i + 1]) && !recently_inserted) {
         if (!(isalpha(in[i - 1]) || isdigit(in[i - 1]))) {
           continue;
         }
@@ -1148,7 +1157,8 @@ std::string t_cr_generator::cr_underscore(std::string in)
  * @return String of rendered function definition
  */
 string t_cr_generator::function_signature(t_function* tfunction, string prefix) {
-  return prefix + cr_underscore(tfunction->get_name()) + "(" + argument_list(tfunction->get_arglist()) + ")";
+  return prefix + cr_underscore(tfunction->get_name()) + "("
+         + argument_list(tfunction->get_arglist()) + ")";
 }
 
 /**
@@ -1237,16 +1247,19 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
 
   ofstream_with_content_based_conditional_update f_skeleton;
   f_skeleton.open(f_skeleton_name.c_str());
-  f_skeleton << "# This autogenerated skeleton file illustrates how to build a server." << endl
-             << "# You should copy it to another filename to avoid overwriting it." << endl << endl
-            //  << "require \"./" << get_include_prefix(*get_program()) << svcname << ".h\"" << endl
-             << "require \"thrift\"" << endl
-             << "require \"./" << underscore(svcname) << ".cr\"" << endl << endl
-             << "include Thrift" << endl;
+  f_skeleton
+      << "# This autogenerated skeleton file illustrates how to build a server." << endl
+      << "# You should copy it to another filename to avoid overwriting it." << endl
+      << endl
+      //  << "require \"./" << get_include_prefix(*get_program()) << svcname << ".h\"" << endl
+      << "require \"thrift\"" << endl
+      << "require \"./" << underscore(svcname) << ".cr\"" << endl
+      << endl
+      << "include Thrift" << endl;
   std::vector<std::string> modules = crystal_modules(program_);
   if (modules.size() > 0) {
     f_skeleton << "include ";
-    for(const auto& module : modules) {
+    for (const auto& module : modules) {
       f_skeleton << "::" << module;
     }
     f_skeleton << endl << endl;
@@ -1266,8 +1279,9 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
     generate_crdoc(f_skeleton, *f_iter);
     indent(f_skeleton) << "def " << function_signature(*f_iter, "") << endl;
     indent_up();
-    indent(f_skeleton) << "# Your implementation goes here" << endl << indent()
-               << "raise ::Thrift::ApplicationException.new message: \"" << (*f_iter)->get_name() << "\"" << endl;
+    indent(f_skeleton) << "# Your implementation goes here" << endl
+                       << indent() << "raise ::Thrift::ApplicationException.new message: \""
+                       << (*f_iter)->get_name() << "\"" << endl;
     indent_down();
     indent(f_skeleton) << "end" << endl;
   }
@@ -1275,16 +1289,18 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
   indent_down();
   indent(f_skeleton) << "end" << endl << endl;
 
-  f_skeleton
-      << "port = 9090" << endl
-      << "handler = " << svcname << "Handler.new" << endl
-      << "processor = " << svcname << "::Processor(" << svcname << "Handler).new(handler)" << endl
-      << "serverTransport = Transport::ServerSocketTransport.new(port)" << endl
-      << "transportFactory = Transport::BufferedTransportFactory.new" << endl
-      << "protocolFactory = Protocol::BinaryProtocolFactory.new"
-      << endl << endl
-      << "server = Server::SimpleServer.new(processor, serverTransport, transportFactory, protocolFactory)" << endl
-      << "server.serve";
+  f_skeleton << "port = 9090" << endl
+             << "handler = " << svcname << "Handler.new" << endl
+             << "processor = " << svcname << "::Processor(" << svcname << "Handler).new(handler)"
+             << endl
+             << "serverTransport = Transport::ServerSocketTransport.new(port)" << endl
+             << "transportFactory = Transport::BufferedTransportFactory.new" << endl
+             << "protocolFactory = Protocol::BinaryProtocolFactory.new" << endl
+             << endl
+             << "server = Server::SimpleServer.new(processor, serverTransport, transportFactory, "
+                "protocolFactory)"
+             << endl
+             << "server.serve";
 
   // Close the files
   f_skeleton.close();
@@ -1304,14 +1320,15 @@ void t_cr_generator::generate_service_skeleton(t_service* tservice) {
  * @param orig_name if we adjusted the name of this field we will pass the original name
  * @return std::string
  */
-std::string t_cr_generator::render_property_type(t_field::e_req req,int key, bool name_altered, const std::string& orig_name)
-{
-  static const std::vector<std::string> req_to_symbol = {
-    ":required",
-    ":optional",
-    ":opt_in_req_out"
-  };
-  std::string ret = "fid: " + std::to_string(key) + ", requirement: " + req_to_symbol[static_cast<int>(req)] + (name_altered ? ", transmit_name: \"" + orig_name + "\"" : "");
+std::string t_cr_generator::render_property_type(t_field::e_req req,
+                                                 int key,
+                                                 bool name_altered,
+                                                 const std::string& orig_name) {
+  static const std::vector<std::string> req_to_symbol
+      = {":required", ":optional", ":opt_in_req_out"};
+  std::string ret = "fid: " + std::to_string(key)
+                    + ", requirement: " + req_to_symbol[static_cast<int>(req)]
+                    + (name_altered ? ", transmit_name: \"" + orig_name + "\"" : "");
   return ret;
 }
 
@@ -1321,20 +1338,20 @@ std::string t_cr_generator::render_property_type(t_field::e_req req,int key, boo
  * @param out ofstream we write generated code to
  * @param tstruct struct to generate code for
  */
-void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_struct* tstruct)
-{
+void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_struct* tstruct) {
   out << endl;
   std::vector<t_field*> fields = tstruct->get_members();
-  std::vector<t_field*>::iterator required_fields_wo_iter = std::partition(std::begin(fields), std::end(fields), [](const t_field* tfield) {
-    return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;
-  });
+  std::vector<t_field*>::iterator required_fields_wo_iter
+      = std::partition(std::begin(fields), std::end(fields), [](const t_field* tfield) {
+          return tfield->get_req() == t_field::T_REQUIRED && tfield->get_value() == nullptr;
+        });
   std::vector<t_field*>::const_iterator f_iter;
 
   indent(out) << "def initialize(";
   bool first = true;
-  for (f_iter = std::cbegin(fields); f_iter != required_fields_wo_iter; ++f_iter) {
+  for (f_iter = std::begin(fields); f_iter != required_fields_wo_iter; ++f_iter) {
     std::string cr_safe_name = fix_name_conflict((*f_iter)->get_name());
-    if(first) {
+    if (first) {
       first = false;
     } else {
       out << ", ";
@@ -1343,11 +1360,11 @@ void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_str
   }
 
   if (required_fields_wo_iter != std::end(fields)) {
-    if(!first) {
+    if (!first) {
       out << ", ";
     }
     out << "*";
-    for (f_iter = required_fields_wo_iter; f_iter != std::cend(fields); ++f_iter) {
+    for (f_iter = required_fields_wo_iter; f_iter != std::end(fields); ++f_iter) {
       std::string cr_safe_name = fix_name_conflict((*f_iter)->get_name());
       out << ", " << cr_safe_name << " = nil";
     }
@@ -1361,29 +1378,18 @@ void t_cr_generator::generate_cr_exception_initializer(t_cr_ofstream& out, t_str
  *
  * @param in
  */
-std::string t_cr_generator::fix_name_conflict(std::string in)
-{
-  const static std::vector<std::string> no_no_words = {
-    "message",
-    "backtrace",
-    "callstack",
-    "module",
-    "end",
-    "class",
-    "struct",
-    "enum",
-    "union",
-    "lib"
-  };
+std::string t_cr_generator::fix_name_conflict(std::string in) {
+  const static std::vector<std::string> no_no_words
+      = {"message", "backtrace", "callstack", "module", "end",
+         "class",   "struct",    "enum",      "union",  "lib", "return"};
 
   in = cr_underscore(in);
 
-  if (std::count(std::cbegin(no_no_words), std::cend(no_no_words), in)) {
+  if (std::count(std::begin(no_no_words), std::end(no_no_words), in)) {
     in += "_";
   }
   return in;
 }
-
 
 THRIFT_REGISTER_GENERATOR(
     cr,

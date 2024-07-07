@@ -172,11 +172,11 @@ void t_generator::generate_docstring_comment(ostream& out,
     docs.getline(line, 1024);
 
     if (strlen(line) > 0) {
-      indent(out) << line_prefix << line << std::endl;
+      indent(out) << line_prefix << line << '\n';
     } else if (line_prefix.empty()){
-      out << std::endl;
+      out << '\n';
     } else if(!docs.eof()) {
-      indent(out) << line_prefix << std::endl;
+      indent(out) << line_prefix << '\n';
     }
   }
   if (!comment_end.empty())
