@@ -504,8 +504,13 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   indent_up();
   indent(out) << "include ::Thrift::Struct" << endl;
 
-  const std::vector<t_field*>& fields = tstruct->get_members();
-  std::vector<t_field*>::const_iterator f_iter;
+  if (is_helper) {
+    std::vector<t_field*> fields = tstruct->get_members();
+    std::vector<t_field*>::iterator f_iter;
+    for (f_iter = std::begin(fields); f_iter != std::end(fields); ++f_iter) {
+      (*f_iter)->set_req(t_field::T_REQUIRED);
+    }
+  }
 
   generate_field_defns(out, tstruct);
   generate_cr_struct_initializer(out, tstruct);
@@ -534,7 +539,7 @@ void t_cr_generator::generate_cr_struct_initializer(t_cr_ofstream& out, t_struct
     } else {
       out << ", ";
     }
-    out << "@" << (*m_iter)->get_name();
+    out << "@" << fix_name_conflict((*m_iter)->get_name());
   }
 
   if (required_wo_default_iter != std::end(members)) {
@@ -604,12 +609,11 @@ void t_cr_generator::generate_cr_union(t_cr_ofstream& out,
  */
 std::string t_cr_generator::render_crystal_type(t_type* ttype, bool base, bool optional) {
   std::string rendered_type = "";
+
+  // ttype = get_true_type(ttype);
   if (ttype->is_typedef()) {
     rendered_type += full_type_name(ttype);
-    return rendered_type;
-  }
-  ttype = get_true_type(ttype);
-  if (ttype->is_base_type()) {
+  } else if (ttype->is_base_type()) {
     t_base_type::t_base base = ((t_base_type*)ttype)->get_base();
     switch (base) {
     case t_base_type::TYPE_BOOL:
@@ -728,7 +732,7 @@ void t_cr_generator::generate_field_data(t_cr_ofstream& out,
                                          const std::string& field_name = "",
                                          t_field::e_req req = t_field::T_OPTIONAL) {
   out << field_name << " : "
-      << render_crystal_type(get_true_type(field_type), false, req != t_field::T_REQUIRED);
+      << render_crystal_type(field_type, false, req != t_field::T_REQUIRED);
   if (value) {
     out << " = ";
     render_const_value(out, field_type, value);
@@ -848,6 +852,7 @@ void t_cr_generator::generate_service_helpers(t_service* tservice) {
 void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   t_struct result(program_, tfunction->get_name() + "_result");
   t_field success(tfunction->get_returntype(), "success", 0);
+  success.set_req(t_field::T_OPTIONAL);
   if (!tfunction->get_returntype()->is_void()) {
     result.append(&success);
   }
@@ -856,9 +861,11 @@ void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   const vector<t_field*>& fields = xs->get_members();
   vector<t_field*>::const_iterator f_iter;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    result.append(*f_iter);
+    t_field field = **f_iter;
+    field.set_req(t_field::T_OPTIONAL);
+    result.append(&field);
   }
-  generate_cr_struct(f_service_, &result, false, true);
+  generate_cr_struct(f_service_, &result, false, false);
 }
 
 /**
@@ -951,6 +958,13 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
 
       indent(f_service_) << "if reply_seqid(rseqid)==false" << endl;
       indent(f_service_) << "  raise \"seqid reply faild\"" << endl;
+
+      indent(f_service_) << "end" << endl;
+      indent(f_service_) << "if fname != \"" << outgoing_name << "\"" << endl;
+      indent_up();
+      indent(f_service_) << "iprot.skip(::Thrift::Type::Struct)"<< endl;
+      indent(f_service_) << "iprot.read_message_end" << endl;
+      indent_down();
       indent(f_service_) << "end" << endl;
 
       indent(f_service_) << "result = receive_message(" << resultname << ")" << endl;
