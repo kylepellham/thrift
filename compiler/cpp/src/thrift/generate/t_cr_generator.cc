@@ -513,6 +513,14 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   }
 
   generate_field_defns(out, tstruct);
+
+  if (is_helper) {
+    std::vector<t_field*> fields = tstruct->get_members();
+    std::vector<t_field*>::iterator f_iter;
+    for (f_iter = std::begin(fields); f_iter != std::end(fields); ++f_iter) {
+      (*f_iter)->set_req(t_field::T_OPT_IN_REQ_OUT);
+    }
+  }
   generate_cr_struct_initializer(out, tstruct);
   indent_down();
   indent(out) << "end" << endl;
@@ -862,7 +870,7 @@ void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   vector<t_field*>::const_iterator f_iter;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
     t_field field = **f_iter;
-    field.set_req(t_field::T_OPTIONAL);
+    // field.set_req(t_field::T_OPTIONAL);
     result.append(&field);
   }
   generate_cr_struct(f_service_, &result, false, false);
@@ -962,7 +970,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       indent(f_service_) << "end" << endl;
       indent(f_service_) << "if fname != \"" << outgoing_name << "\"" << endl;
       indent_up();
-      indent(f_service_) << "iprot.skip(::Thrift::Type::Struct)"<< endl;
+      indent(f_service_) << "iprot.skip(::Thrift::Types::Struct)"<< endl;
       indent(f_service_) << "iprot.read_message_end" << endl;
       indent_down();
       indent(f_service_) << "end" << endl;
