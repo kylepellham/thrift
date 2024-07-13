@@ -513,6 +513,9 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
   }
 
   generate_field_defns(out, tstruct);
+  generate_cr_struct_initializer(out, tstruct);
+  indent_down();
+  indent(out) << "end" << endl;
 
   if (is_helper) {
     std::vector<t_field*> fields = tstruct->get_members();
@@ -521,9 +524,6 @@ void t_cr_generator::generate_cr_struct(t_cr_ofstream& out,
       (*f_iter)->set_req(t_field::T_OPT_IN_REQ_OUT);
     }
   }
-  generate_cr_struct_initializer(out, tstruct);
-  indent_down();
-  indent(out) << "end" << endl;
 }
 
 /**
@@ -848,7 +848,9 @@ void t_cr_generator::generate_service_helpers(t_service* tservice) {
   for (f_iter = functions.begin(); f_iter != functions.end(); ++f_iter) {
     t_struct* ts = (*f_iter)->get_arglist();
     generate_cr_struct(f_service_, ts, false, true);
-    generate_cr_function_helpers(*f_iter);
+    if (!(*f_iter)->is_oneway()) {
+      generate_cr_function_helpers(*f_iter);
+    }
   }
 }
 
@@ -860,7 +862,6 @@ void t_cr_generator::generate_service_helpers(t_service* tservice) {
 void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   t_struct result(program_, tfunction->get_name() + "_result");
   t_field success(tfunction->get_returntype(), "success", 0);
-  success.set_req(t_field::T_OPTIONAL);
   if (!tfunction->get_returntype()->is_void()) {
     result.append(&success);
   }
@@ -869,9 +870,7 @@ void t_cr_generator::generate_cr_function_helpers(t_function* tfunction) {
   const vector<t_field*>& fields = xs->get_members();
   vector<t_field*>::const_iterator f_iter;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    t_field field = **f_iter;
-    // field.set_req(t_field::T_OPTIONAL);
-    result.append(&field);
+    result.append(*f_iter);
   }
   generate_cr_struct(f_service_, &result, false, false);
 }
@@ -970,8 +969,8 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       indent(f_service_) << "end" << endl;
       indent(f_service_) << "if fname != \"" << outgoing_name << "\"" << endl;
       indent_up();
-      indent(f_service_) << "iprot.skip(::Thrift::Types::Struct)"<< endl;
-      indent(f_service_) << "iprot.read_message_end" << endl;
+      indent(f_service_) << "@iprot.skip(::Thrift::Types::Struct)"<< endl;
+      indent(f_service_) << "@iprot.read_message_end" << endl;
       indent_down();
       indent(f_service_) << "end" << endl;
 
