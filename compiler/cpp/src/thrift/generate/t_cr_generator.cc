@@ -701,13 +701,15 @@ std::string t_cr_generator::render_crystal_type(t_type* ttype, bool base, bool o
  * @param tstruct definition of struct
  */
 void t_cr_generator::generate_field_defns(t_cr_ofstream& out, t_struct* tstruct) {
-  out << endl;
   const vector<t_field*>& fields = tstruct->get_members();
   vector<t_field*>::const_iterator f_iter;
 
   bool first = true;
   for (f_iter = fields.begin(); f_iter != fields.end(); ++f_iter) {
-    first = false;
+    if (first) {
+      out << endl;
+      first = false;
+    }
     generate_crdoc(out, *f_iter);
     std::string cr_safe_name = fix_name_conflict((*f_iter)->get_name());
     indent(out) << "@[SerialOpts("
@@ -889,10 +891,11 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
   }
 
   f_service_ << endl;
+  generate_crdoc(f_service_, tservice);
   indent(f_service_) << "class Client" << extends_client << endl;
   indent_up();
 
-  indent(f_service_) << "include ::Thrift::Client" << endl << endl;
+  indent(f_service_) << "include ::Thrift::Client" << endl;
 
   // Generate client method implementations
   vector<t_function*> functions = tservice->get_functions();
@@ -905,6 +908,7 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
     std::string outgoing_name = (*f_iter)->get_name();
 
     // Open function
+    f_service_ << endl;
     indent(f_service_) << "def " << function_signature(*f_iter) << endl;
     indent_up();
     indent(f_service_) << "send_" << funname << "(";
@@ -975,7 +979,6 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       indent(f_service_) << "end" << endl;
 
       indent(f_service_) << "result = receive_message(" << resultname << ")" << endl;
-      // Careful, only return _result if not a void function
 
       t_struct* xs = (*f_iter)->get_xceptions();
       const std::vector<t_field*>& xceptions = xs->get_members();
@@ -985,17 +988,15 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       }
 
       if ((*f_iter)->get_returntype()->is_void()) {
-        indent(f_service_) << "return" << endl;
+        indent(f_service_) << "return nil" << endl;
       } else {
+        indent(f_service_) << "success = result.success" << endl;
         indent(f_service_) << "raise "
                               "::Thrift::ApplicationException.new(::Thrift::ApplicationException::"
                               "MISSING_RESULT, \""
                            << (*f_iter)->get_name()
-                           << " failed: unknown result\") if result.success.nil?" << endl;
-      }
-      // Careful, only return _result if not a void function
-      if (!(*f_iter)->get_returntype()->is_void()) {
-        indent(f_service_) << "return result.success.not_nil!" << endl;
+                           << " failed: unknown result\") if success.nil?" << endl;
+        indent(f_service_) << "return success" << endl;
       }
 
       // Close function
@@ -1027,6 +1028,7 @@ void t_cr_generator::generate_service_server(t_service* tservice) {
   }
 
   // Generate the header portion
+  generate_crdoc(f_service_, tservice);
   indent(f_service_) << "class Processor(T)" << endl;
   indent_up();
   indent(f_service_) << "include ::Thrift::Processor" << extends_processor << endl;
