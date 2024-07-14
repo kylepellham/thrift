@@ -971,12 +971,6 @@ void t_cr_generator::generate_service_client(t_service* tservice) {
       indent(f_service_) << "  raise \"seqid reply faild\"" << endl;
 
       indent(f_service_) << "end" << endl;
-      indent(f_service_) << "if fname != \"" << outgoing_name << "\"" << endl;
-      indent_up();
-      indent(f_service_) << "@iprot.skip(::Thrift::Types::Struct)"<< endl;
-      indent(f_service_) << "@iprot.read_message_end" << endl;
-      indent_down();
-      indent(f_service_) << "end" << endl;
 
       indent(f_service_) << "result = receive_message(" << resultname << ")" << endl;
 
